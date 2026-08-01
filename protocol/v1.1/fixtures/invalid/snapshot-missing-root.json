@@ -1,0 +1,39 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-invalid",
+  "result": {
+    "snapshot": {"id": "snapshot_missingroot01", "generation": 21},
+    "sources": [
+      {
+        "id": "android.main",
+        "platform": "android",
+        "provider": "android.views",
+        "representation": "native",
+        "nativeSchema": "android.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "pixel", "scale": 1},
+        "rootRef": "node_expectedroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 1,
+      "selectedNodes": 1,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {
+        "ref": "node_otherroot01",
+        "sourceId": "android.main",
+        "depth": 0,
+        "childCount": 0,
+        "index": {"className": "DecorView"}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 1,
+      "appliedLimits": {"maxItems": 20, "maxBytes": 65536}
+    }
+  }
+}

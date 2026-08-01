@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-extra-root",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": ["node_inspectroot01"],
+    "nodes": [
+      {"ref": "node_inspectroot01", "sourceId": "uikit.main", "depth": 0, "childCount": 0},
+      {"ref": "node_inspectroot02", "sourceId": "uikit.main", "depth": 0, "childCount": 0}
+    ],
+    "page": {"truncated": false, "returnedItems": 2, "appliedLimits": {"maxItems": 10, "maxBytes": 8192}}
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-missing-adjacency",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": ["node_loginbutton01"],
+    "nodes": [
+      {"ref": "node_loginbutton01", "sourceId": "uikit.main", "depth": 1, "childCount": 0}
+    ],
+    "page": {"truncated": false, "returnedItems": 1, "appliedLimits": {"maxItems": 20, "maxBytes": 65536}}
+  }
+}

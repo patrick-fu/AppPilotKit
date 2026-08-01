@@ -1,0 +1,14 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-native-only",
+  "method": "ui.snapshot",
+  "params": {
+    "selection": "full",
+    "detail": "native",
+    "providers": ["custom.native"]
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

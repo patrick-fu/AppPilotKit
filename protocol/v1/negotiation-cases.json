@@ -12,7 +12,9 @@
       "major": 1,
       "minMinor": 0,
       "maxMinor": 0,
-      "capabilities": ["session.core"]
+      "capabilitiesByMinor": {
+        "0": ["session.core"]
+      }
     },
     "response": {
       "requestId": "request-1",
@@ -35,7 +37,9 @@
       "major": 1,
       "minMinor": 0,
       "maxMinor": 0,
-      "capabilities": ["session.core"]
+      "capabilitiesByMinor": {
+        "0": ["session.core"]
+      }
     },
     "response": {
       "requestId": "request-2",
@@ -58,7 +62,9 @@
       "major": 1,
       "minMinor": 0,
       "maxMinor": 0,
-      "capabilities": ["session.core"]
+      "capabilitiesByMinor": {
+        "0": ["session.core"]
+      }
     },
     "response": {
       "requestId": "request-1",
@@ -81,7 +87,9 @@
       "major": 1,
       "minMinor": 0,
       "maxMinor": 0,
-      "capabilities": ["session.core"]
+      "capabilitiesByMinor": {
+        "0": ["session.core"]
+      }
     },
     "response": {
       "requestId": "request-1",

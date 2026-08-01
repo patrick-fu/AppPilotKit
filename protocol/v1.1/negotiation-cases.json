@@ -1,0 +1,106 @@
+[
+  {
+    "name": "negotiates UI inspection minor and capabilities",
+    "client": {
+      "requestId": "request-ui-1",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "requiredCapabilities": ["ui.snapshot", "ui.inspect"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "capabilitiesByMinor": {
+        "0": ["session.core"],
+        "1": ["session.core", "ui.snapshot", "ui.inspect"]
+      }
+    },
+    "response": {
+      "requestId": "request-ui-1",
+      "major": 1,
+      "minor": 1,
+      "capabilities": ["session.core", "ui.snapshot", "ui.inspect"]
+    },
+    "valid": true
+  },
+  {
+    "name": "rejects UI negotiation without inspect capability",
+    "client": {
+      "requestId": "request-ui-1",
+      "major": 1,
+      "minMinor": 1,
+      "maxMinor": 1,
+      "requiredCapabilities": ["ui.snapshot", "ui.inspect"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "capabilitiesByMinor": {
+        "0": ["session.core"],
+        "1": ["session.core", "ui.snapshot"]
+      }
+    },
+    "response": {
+      "requestId": "request-ui-1",
+      "major": 1,
+      "minor": 1,
+      "capabilities": ["session.core", "ui.snapshot"]
+    },
+    "valid": false
+  },
+  {
+    "name": "filters UI capabilities when negotiating v1.0",
+    "client": {
+      "requestId": "request-v1-client",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "requiredCapabilities": ["session.core"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "capabilitiesByMinor": {
+        "0": ["session.core"],
+        "1": ["session.core", "ui.snapshot", "ui.inspect"]
+      }
+    },
+    "response": {
+      "requestId": "request-v1-client",
+      "major": 1,
+      "minor": 0,
+      "capabilities": ["session.core"]
+    },
+    "valid": true
+  },
+  {
+    "name": "rejects UI capability leakage into v1.0",
+    "client": {
+      "requestId": "request-v1-client",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "requiredCapabilities": ["session.core"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "capabilitiesByMinor": {
+        "0": ["session.core"],
+        "1": ["session.core", "ui.snapshot", "ui.inspect"]
+      }
+    },
+    "response": {
+      "requestId": "request-v1-client",
+      "major": 1,
+      "minor": 0,
+      "capabilities": ["session.core", "ui.snapshot", "ui.inspect"]
+    },
+    "valid": false
+  }
+]

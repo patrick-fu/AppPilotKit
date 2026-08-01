@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ASCII contains matches inside mixed Unicode candidate",
+    "predicate": {"operator": "contains", "value": "log in", "caseSensitive": false},
+    "candidate": "Log in 登录",
+    "matches": true
+  },
+  {
+    "name": "ASCII exact does not discard mixed Unicode suffix",
+    "predicate": {"operator": "exact", "value": "log in", "caseSensitive": false},
+    "candidate": "Log in 登录",
+    "matches": false
+  },
+  {
+    "name": "case-sensitive Unicode compares without folding",
+    "predicate": {"operator": "exact", "value": "登录", "caseSensitive": true},
+    "candidate": "登录",
+    "matches": true
+  },
+  {
+    "name": "ASCII folding is locale independent",
+    "predicate": {"operator": "prefix", "value": "istanbul", "caseSensitive": false},
+    "candidate": "ISTANBUL / İstanbul",
+    "matches": true
+  }
+]

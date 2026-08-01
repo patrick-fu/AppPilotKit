@@ -1,0 +1,42 @@
+[
+  {
+    "name": "continues a full snapshot with an opaque cursor",
+    "initialRequest": "valid/snapshot-request-full.json",
+    "initialResponse": "valid/snapshot-response-full-truncated.json",
+    "continuationRequest": "valid/snapshot-request-continuation.json",
+    "finalResponse": "valid/snapshot-response-full-final.json",
+    "valid": true
+  },
+  {
+    "name": "rejects a mutated repeated snapshot node",
+    "initialRequest": "valid/snapshot-request-full.json",
+    "initialResponse": "valid/snapshot-response-full-truncated.json",
+    "continuationRequest": "valid/snapshot-request-continuation.json",
+    "finalResponse": "valid/snapshot-response-full-final-mutated-root.json",
+    "valid": false
+  },
+  {
+    "name": "continues a compact inspect result",
+    "initialRequest": "valid/inspect-request-ref-paged.json",
+    "initialResponse": "valid/inspect-response-paged-truncated.json",
+    "continuationRequest": "valid/inspect-request-continuation.json",
+    "finalResponse": "valid/inspect-response-paged-final.json",
+    "valid": true
+  },
+  {
+    "name": "rejects native detail on a compact inspect continuation",
+    "initialRequest": "valid/inspect-request-ref-paged.json",
+    "initialResponse": "valid/inspect-response-paged-truncated.json",
+    "continuationRequest": "valid/inspect-request-continuation.json",
+    "finalResponse": "valid/inspect-response-paged-final-native.json",
+    "valid": false
+  },
+  {
+    "name": "rejects an inspect continuation from another session",
+    "initialRequest": "valid/inspect-request-ref-paged.json",
+    "initialResponse": "valid/inspect-response-paged-truncated.json",
+    "continuationRequest": "valid/inspect-request-continuation-other-session.json",
+    "finalResponse": "valid/inspect-response-paged-final.json",
+    "valid": false
+  }
+]

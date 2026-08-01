@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-ui-session",
+  "method": "session.open",
+  "params": {
+    "client": {
+      "name": "apppilotkit-cli",
+      "version": "0.1.0"
+    },
+    "protocol": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1
+    },
+    "requiredCapabilities": ["ui.snapshot", "ui.inspect"]
+  }
+}

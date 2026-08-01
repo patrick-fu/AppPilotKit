@@ -1,0 +1,53 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-2-page-2",
+  "result": {
+    "snapshot": {
+      "id": "snapshot_f17e9be8186d4131",
+      "generation": 13
+    },
+    "sources": [
+      {
+        "id": "compose.main",
+        "platform": "android",
+        "provider": "compose.semantics",
+        "representation": "semantics",
+        "nativeSchema": "compose.semantics@1",
+        "coordinateSpace": {"origin": "screen", "unit": "pixel", "scale": 1},
+        "rootRef": "node_composeroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "full",
+      "totalNodes": 3,
+      "selectedNodes": 3,
+      "criteria": ["all"]
+    },
+    "nodes": [
+      {
+        "ref": "node_composeroot01",
+        "sourceId": "compose.main",
+        "depth": 0,
+        "childCount": 2,
+        "index": {"typeName": "Root", "visible": true},
+        "native": {"mergeDescendants": false}
+      },
+      {
+        "ref": "node_composebutton01",
+        "sourceId": "compose.main",
+        "parentRef": "node_composeroot01",
+        "childIndex": 1,
+        "depth": 1,
+        "childCount": 0,
+        "index": {"text": "Refresh", "typeName": "Button", "interactive": true},
+        "native": {"testTag": "refresh_button"}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 2,
+      "appliedLimits": {"maxItems": 2, "maxBytes": 65536}
+    }
+  }
+}

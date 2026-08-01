@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-android-points",
+  "result": {
+    "snapshot": {"id": "snapshot_androidpoint1", "generation": 1},
+    "sources": [
+      {
+        "id": "view.main",
+        "platform": "android",
+        "provider": "android.views",
+        "representation": "native",
+        "nativeSchema": "android.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_androidroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {"mode": "full", "totalNodes": 1, "selectedNodes": 1, "criteria": ["all"]},
+    "nodes": [{"ref": "node_androidroot01", "sourceId": "view.main", "depth": 0, "childCount": 0}],
+    "page": {"truncated": false, "returnedItems": 1, "appliedLimits": {"maxItems": 10, "maxBytes": 8192}}
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-cursor",
+  "method": "ui.snapshot",
+  "params": {
+    "selection": "full",
+    "cursor": "cursor_snapshot_page_2"
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

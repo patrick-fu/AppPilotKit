@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-stale",
+  "error": {
+    "code": -32010,
+    "message": "Snapshot is no longer retained",
+    "data": {
+      "kind": "ui.referenceNotFound",
+      "retryable": false
+    }
+  }
+}

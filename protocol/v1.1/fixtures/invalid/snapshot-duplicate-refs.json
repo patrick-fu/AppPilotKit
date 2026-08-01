@@ -1,0 +1,48 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-invalid",
+  "result": {
+    "snapshot": {"id": "snapshot_badgraph01", "generation": 20},
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_duplicate01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 2,
+      "selectedNodes": 2,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {
+        "ref": "node_duplicate01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 1,
+        "index": {"className": "UIWindow"}
+      },
+      {
+        "ref": "node_duplicate01",
+        "sourceId": "uikit.main",
+        "parentRef": "node_duplicate01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0,
+        "index": {"className": "UIView"}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 2,
+      "appliedLimits": {"maxItems": 20, "maxBytes": 65536}
+    }
+  }
+}

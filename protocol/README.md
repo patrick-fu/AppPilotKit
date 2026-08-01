@@ -15,6 +15,23 @@ and mobile SDKs. It does not normalize platform UI models.
   capability invariants.
 - `v1/disclosure-cases.json` covers request/session limit clamping.
 
+## Version 1.1 UI inspection
+
+- `v1.1/schema/ui.schema.json` defines `ui.snapshot`, `ui.inspect`,
+  snapshot-scoped references, searchable node indexes, and provider-native
+  details.
+- `v1.1/schema/envelope.schema.json` adds namespaced UI reference errors.
+- `v1.1/schema/session.schema.json` pins minor 1 capability negotiation.
+- `v1.1/fixtures` covers compact and full trees, multiple providers, selectors,
+  traversal, graph integrity, byte limits, and stale references.
+- `v1.1/pagination-cases.json` verifies opaque-cursor continuation and final
+  page progress across messages.
+- `v1.1/string-matching-cases.json` fixes cross-platform string predicate
+  semantics, including mixed Unicode candidates.
+
+See [ADR 0002](../docs/adr/0002-ui-snapshot-and-inspection.md) for selection,
+reference lifetime, traversal, and platform-preservation rules.
+
 The Node package is only a contract-test harness; it does not select the final
 CLI implementation language.
 

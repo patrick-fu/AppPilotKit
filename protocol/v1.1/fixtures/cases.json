@@ -1,0 +1,448 @@
+[
+  {
+    "name": "v1.1 session open request",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/session.schema.json#/$defs/openRequest",
+    "fixture": "valid/session-open-request.json",
+    "valid": true,
+    "semantic": "versionRange"
+  },
+  {
+    "name": "v1.1 session open success",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/session.schema.json#/$defs/openSuccess",
+    "fixture": "valid/session-open-success.json",
+    "valid": true
+  },
+  {
+    "name": "snapshot request with defaults",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "valid/snapshot-request-default.json",
+    "valid": true
+  },
+  {
+    "name": "explicit full snapshot request",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "valid/snapshot-request-full.json",
+    "valid": true
+  },
+  {
+    "name": "snapshot continuation uses only snapshot and cursor",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "valid/snapshot-request-continuation.json",
+    "valid": true
+  },
+  {
+    "name": "native snapshot request names providers",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "valid/snapshot-request-native-only.json",
+    "valid": true
+  },
+  {
+    "name": "compact snapshot with multiple providers",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "valid/snapshot-response-agent.json",
+    "valid": true,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-default.json",
+    "expectedExchangeValid": true
+  },
+  {
+    "name": "full snapshot with pagination",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "valid/snapshot-response-full-truncated.json",
+    "valid": true,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-full.json",
+    "expectedExchangeValid": true
+  },
+  {
+    "name": "final full snapshot page remains ancestor-closed",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "valid/snapshot-response-full-final.json",
+    "valid": true,
+    "semantic": "snapshotResult"
+  },
+  {
+    "name": "native-only provider node keeps its opaque payload",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "valid/snapshot-response-native-only.json",
+    "valid": true,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-native-only.json",
+    "expectedExchangeValid": true
+  },
+  {
+    "name": "inspect subtree by stable reference",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-ref.json",
+    "valid": true
+  },
+  {
+    "name": "inspect by native class name",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-class.json",
+    "valid": true
+  },
+  {
+    "name": "inspect query uses an inclusive subtree scope",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-scoped-query.json",
+    "valid": true
+  },
+  {
+    "name": "inspect continuation uses only snapshot and cursor",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-continuation.json",
+    "valid": true
+  },
+  {
+    "name": "inspect continuation is structurally valid in another session",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-continuation-other-session.json",
+    "valid": true
+  },
+  {
+    "name": "paged inspect request uses compact detail",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-ref-paged.json",
+    "valid": true
+  },
+  {
+    "name": "inspect by text",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-text.json",
+    "valid": true
+  },
+  {
+    "name": "case-sensitive matching accepts non-ASCII input",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-nonascii-case-sensitive.json",
+    "valid": true
+  },
+  {
+    "name": "inspect by source geometry",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "valid/inspect-request-geometry.json",
+    "valid": true
+  },
+  {
+    "name": "inspect response separates matches from context",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "valid/inspect-response-subtree.json",
+    "valid": true,
+    "semantic": "inspectResult",
+    "requestFixture": "valid/inspect-request-ref.json",
+    "expectedExchangeValid": true
+  },
+  {
+    "name": "first inspect page returns its direct match",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "valid/inspect-response-paged-truncated.json",
+    "valid": true,
+    "semantic": "inspectResult",
+    "requestFixture": "valid/inspect-request-ref-paged.json",
+    "expectedExchangeValid": true
+  },
+  {
+    "name": "final inspect page returns remaining context",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "valid/inspect-response-paged-final.json",
+    "valid": true,
+    "semantic": "inspectResult"
+  },
+  {
+    "name": "native final inspect page is standalone valid",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "valid/inspect-response-paged-final-native.json",
+    "valid": true,
+    "semantic": "inspectResult"
+  },
+  {
+    "name": "mutated repeated snapshot node is standalone valid",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "valid/snapshot-response-full-final-mutated-root.json",
+    "valid": true,
+    "semantic": "snapshotResult"
+  },
+  {
+    "name": "expired snapshot error",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/error",
+    "fixture": "valid/snapshot-expired-error.json",
+    "valid": true
+  },
+  {
+    "name": "snapshot request without session",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "invalid/snapshot-request-missing-context.json",
+    "valid": false
+  },
+  {
+    "name": "snapshot cursor without snapshot identity",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "invalid/snapshot-cursor-missing-snapshot.json",
+    "valid": false
+  },
+  {
+    "name": "snapshot identity without cursor is not a continuation",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotRequest",
+    "fixture": "invalid/snapshot-without-cursor.json",
+    "valid": false
+  },
+  {
+    "name": "inspect continuation cannot repeat its target",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-continuation-extra-target.json",
+    "valid": false
+  },
+  {
+    "name": "inspect target contains refs and query",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-target-ambiguous.json",
+    "valid": false
+  },
+  {
+    "name": "inspect query has no predicates",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-query-empty.json",
+    "valid": false
+  },
+  {
+    "name": "inspect scope cannot stand in for a predicate",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-query-within-only.json",
+    "valid": false
+  },
+  {
+    "name": "inspect reference is malformed",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-ref-malformed.json",
+    "valid": false
+  },
+  {
+    "name": "case-insensitive matching rejects non-ASCII input",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-nonascii-case-insensitive.json",
+    "valid": false
+  },
+  {
+    "name": "geometry query omits source coordinate space",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectRequest",
+    "fixture": "invalid/inspect-geometry-missing-source.json",
+    "valid": false
+  },
+  {
+    "name": "snapshot contains duplicate references",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-duplicate-refs.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot source root is absent",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-missing-root.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot parent link is invalid",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-invalid-parent.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot nodes are not depth-first",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-not-depth-first.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "inspect match is absent from nodes",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-match-absent.json",
+    "valid": false,
+    "semantic": "inspectResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "inspect response stays on the requested snapshot",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-response-snapshot-mismatch.json",
+    "valid": false,
+    "semantic": "inspectResult",
+    "requestFixture": "valid/inspect-request-ref.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "explicit inspect references equal direct matches",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-response-target-mismatch.json",
+    "valid": false,
+    "semantic": "inspectResult",
+    "requestFixture": "valid/inspect-request-ref.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "inspect non-root node retains native adjacency",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-nonroot-missing-adjacency.json",
+    "valid": false
+  },
+  {
+    "name": "inspect source returns at most one root",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-extra-root.json",
+    "valid": false,
+    "semantic": "inspectResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "inspect nodes preserve depth-first order",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/inspectSuccess",
+    "fixture": "invalid/inspect-not-depth-first.json",
+    "valid": false,
+    "semantic": "inspectResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot returned item count is wrong",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-page-count-mismatch.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "full snapshot selection omits nodes",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-full-count-mismatch.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot page cannot exceed selected node count",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-selected-count-below-page.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot source has exactly one root",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-extra-root.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot sources belong to one app platform",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-mixed-platforms.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "snapshot siblings preserve native child order",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-sibling-order.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "iOS source coordinates use points",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-ios-pixel-coordinate.json",
+    "valid": false
+  },
+  {
+    "name": "Android source coordinates use physical pixels",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-android-point-coordinate.json",
+    "valid": false
+  },
+  {
+    "name": "serialized response exceeds applied byte limit",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-byte-limit-exceeded.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": false
+  },
+  {
+    "name": "compact snapshot cannot disclose native payloads",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-compact-with-native.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-default.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "snapshot response selection matches the request",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-selection-request-mismatch.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-full.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "snapshot response providers match the request",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-provider-request-mismatch.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-full.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "snapshot applied limits stay within request hints",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json#/$defs/snapshotSuccess",
+    "fixture": "invalid/snapshot-request-limit-exceeded.json",
+    "valid": false,
+    "semantic": "snapshotResult",
+    "requestFixture": "valid/snapshot-request-full.json",
+    "expectedSchemaValid": true,
+    "expectedSemanticValid": true,
+    "expectedExchangeValid": false
+  },
+  {
+    "name": "UI error code and kind mismatch",
+    "schema": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/error",
+    "fixture": "invalid/ui-error-code-kind-mismatch.json",
+    "valid": false
+  }
+]

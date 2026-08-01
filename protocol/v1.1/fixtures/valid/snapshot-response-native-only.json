@@ -1,0 +1,34 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-native-only",
+  "result": {
+    "snapshot": {"id": "snapshot_nativeonly1234", "generation": 14},
+    "sources": [
+      {
+        "id": "custom.main",
+        "platform": "android",
+        "provider": "custom.native",
+        "representation": "native",
+        "nativeSchema": "custom.native@1",
+        "coordinateSpace": {"origin": "screen", "unit": "pixel", "scale": 1},
+        "rootRef": "node_nativeonlyroot",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {"mode": "full", "totalNodes": 1, "selectedNodes": 1, "criteria": ["all"]},
+    "nodes": [
+      {
+        "ref": "node_nativeonlyroot",
+        "sourceId": "custom.main",
+        "depth": 0,
+        "childCount": 0,
+        "native": {"providerOwnedField": {"nested": true}}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 1,
+      "appliedLimits": {"maxItems": 10, "maxBytes": 8192}
+    }
+  }
+}
