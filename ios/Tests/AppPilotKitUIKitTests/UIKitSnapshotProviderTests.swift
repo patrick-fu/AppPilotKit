@@ -148,6 +148,23 @@
       )
     }
 
+    func testInteractionRequiresEnabledAncestorChain() async throws {
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+      window.isHidden = false
+      let disabledContainer = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+      disabledContainer.isUserInteractionEnabled = false
+      disabledContainer.addSubview(
+        UIButton(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
+      )
+      window.addSubview(disabledContainer)
+      let provider = UIKitSnapshotProvider(windows: { [window] })
+
+      let capturedButton = try await provider.capture().sources[0].nodes[2]
+
+      XCTAssertEqual(capturedButton.index?.visible, true)
+      XCTAssertEqual(capturedButton.index?.interactive, false)
+    }
+
     func testCaptureEmitsScreenPointGeometryAndWhitelistedNativeFields() async throws {
       let window = UIWindow(frame: CGRect(x: 30, y: 40, width: 320, height: 640))
       window.isHidden = false
@@ -195,6 +212,20 @@
           "alpha", "clipsToBounds", "hidden", "keyWindow", "opaque", "tag",
           "userInteractionEnabled", "windowLevel",
         ])
+    }
+
+    func testCaptureRejectsNonFiniteNativeNumbers() async throws {
+      let window = NonFiniteLevelWindow(
+        frame: CGRect(x: 0, y: 0, width: 320, height: 640)
+      )
+      let provider = UIKitSnapshotProvider(windows: { [window] })
+
+      do {
+        _ = try await provider.capture()
+        XCTFail("Expected capture with a non-finite native value to fail")
+      } catch {
+        XCTAssertEqual(error as? UIKitSnapshotProviderError, .invalidNativeValue)
+      }
     }
 
     func testCapturePreservesWindowOrderAndDeduplicatesIdentity() async throws {
@@ -266,6 +297,14 @@
       XCTAssertEqual(capturedLabel.childIndex, 1)
       XCTAssertEqual(capturedLabel.depth, 1)
       XCTAssertEqual(capturedLabel.childCount, 0)
+    }
+  }
+
+  @MainActor
+  private final class NonFiniteLevelWindow: UIWindow {
+    override var windowLevel: UIWindow.Level {
+      get { UIWindow.Level(rawValue: .nan) }
+      set {}
     }
   }
 #endif

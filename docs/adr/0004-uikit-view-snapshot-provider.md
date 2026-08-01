@@ -67,8 +67,9 @@ Effective visibility is true only when all of these hold:
 - its converted frame intersects the source window bounds.
 
 The adapter does not attempt pixel occlusion or clipping-region analysis.
-Effective interactivity additionally requires `isUserInteractionEnabled` and
-either an enabled `UIControl` or an enabled gesture recognizer. A source
+Effective interactivity additionally requires `isUserInteractionEnabled` on
+the node and every ancestor through the source window, plus either an enabled
+`UIControl` or an enabled gesture recognizer. A source
 `UIWindow` root is never marked interactive because UIKit/test hosts may attach
 private window gestures and the root is already included structurally.
 
@@ -89,10 +90,10 @@ Schema `uikit.view@1` contains only these structural native fields:
   `userInteractionEnabled`, and `tag`;
 - window roots: `keyWindow` and `windowLevel` in addition to the view fields.
 
-The provider returns `noWindows` when discovery yields no source and
-`invalidGeometry` when a view cannot produce protocol-safe geometry. The core
-runtime maps either provider failure to `internalError` and commits no partial
-snapshot.
+The provider returns `noWindows` when discovery yields no source,
+`invalidGeometry` when a view cannot produce protocol-safe geometry, and
+`invalidNativeValue` when a numeric native field is not finite. The core runtime
+maps provider failures to `internalError` and commits no partial snapshot.
 
 ## Consequences
 

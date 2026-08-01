@@ -9,6 +9,7 @@
 
   public enum UIKitSnapshotProviderError: Error, Equatable, Sendable {
     case invalidGeometry
+    case invalidNativeValue
     case noWindows
   }
 
@@ -89,9 +90,9 @@
               className: NSStringFromClass(type(of: current.view)),
               frame: try screenFrame(of: current.view, in: window),
               visible: visible,
-              interactive: isInteractive(current.view, visible: visible)
+              interactive: isInteractive(current.view, in: window, visible: visible)
             ),
-            native: nativeFields(of: current.view)
+            native: try nativeFields(of: current.view)
           )
         )
         for (childIndex, child) in current.view.subviews.enumerated().reversed() {
@@ -141,9 +142,13 @@
       )
     }
 
-    private func nativeFields(of view: UIView) -> [String: JSONValue] {
+    private func nativeFields(of view: UIView) throws -> [String: JSONValue] {
+      let alpha = Double(view.alpha)
+      guard alpha.isFinite else {
+        throw UIKitSnapshotProviderError.invalidNativeValue
+      }
       var fields: [String: JSONValue] = [
-        "alpha": .number(Double(view.alpha)),
+        "alpha": .number(alpha),
         "clipsToBounds": .bool(view.clipsToBounds),
         "hidden": .bool(view.isHidden),
         "opaque": .bool(view.isOpaque),
@@ -151,8 +156,12 @@
         "userInteractionEnabled": .bool(view.isUserInteractionEnabled),
       ]
       if let window = view as? UIWindow {
+        let windowLevel = Double(window.windowLevel.rawValue)
+        guard windowLevel.isFinite else {
+          throw UIKitSnapshotProviderError.invalidNativeValue
+        }
         fields["keyWindow"] = .bool(window.isKeyWindow)
-        fields["windowLevel"] = .number(Double(window.windowLevel.rawValue))
+        fields["windowLevel"] = .number(windowLevel)
       }
       return fields
     }
@@ -196,9 +205,19 @@
       return !frameInWindow.isNull && frameInWindow.intersects(window.bounds)
     }
 
-    private func isInteractive(_ view: UIView, visible: Bool) -> Bool {
-      guard visible, view.isUserInteractionEnabled, !(view is UIWindow) else {
+    private func isInteractive(_ view: UIView, in window: UIWindow, visible: Bool) -> Bool {
+      guard visible, !(view is UIWindow) else {
         return false
+      }
+      var current: UIView? = view
+      while let candidate = current {
+        guard candidate.isUserInteractionEnabled else {
+          return false
+        }
+        if candidate === window {
+          break
+        }
+        current = candidate.superview
       }
       if let control = view as? UIControl, control.isEnabled {
         return true
