@@ -215,8 +215,9 @@
     }
 
     func testCaptureRejectsNonFiniteNativeNumbers() async throws {
-      let window = NonFiniteLevelWindow(
-        frame: CGRect(x: 0, y: 0, width: 320, height: 640)
+      let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+      window.addSubview(
+        NonFiniteAlphaView(frame: CGRect(x: 0, y: 0, width: 40, height: 40))
       )
       let provider = UIKitSnapshotProvider(windows: { [window] })
 
@@ -301,9 +302,9 @@
   }
 
   @MainActor
-  private final class NonFiniteLevelWindow: UIWindow {
-    override var windowLevel: UIWindow.Level {
-      get { UIWindow.Level(rawValue: .nan) }
+  private final class NonFiniteAlphaView: UIView {
+    override var alpha: CGFloat {
+      get { .nan }
       set {}
     }
   }
