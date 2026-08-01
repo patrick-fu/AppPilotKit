@@ -1,0 +1,12 @@
+{
+  "truncated": true,
+  "returnedItems": 100,
+  "appliedLimits": {
+    "maxItems": 100,
+    "maxBytes": 65536
+  },
+  "reasons": [
+    "maxItems"
+  ],
+  "nextCursor": "cursor_eyJvZmZzZXQiOjEwMH0"
+}

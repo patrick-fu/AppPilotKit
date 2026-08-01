@@ -1,0 +1,8 @@
+[
+  {
+    "jsonrpc": "2.0",
+    "id": "request-1",
+    "method": "session.open",
+    "params": {}
+  }
+]

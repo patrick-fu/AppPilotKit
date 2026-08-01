@@ -1,0 +1,10 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-3",
+  "method": "session.open",
+  "params": {},
+  "context": {
+    "id": "session_f47ac10b58cc4372",
+    "generation": 4
+  }
+}

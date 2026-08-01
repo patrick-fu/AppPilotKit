@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json",
+  "title": "AppPilotKit v1 bounded disclosure",
+  "$ref": "#/$defs/page",
+  "$defs": {
+    "itemLimit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "byteLimit": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 67108864
+    },
+    "requestedLimits": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "maxItems": {
+          "$ref": "#/$defs/itemLimit"
+        },
+        "maxBytes": {
+          "$ref": "#/$defs/byteLimit"
+        }
+      },
+      "additionalProperties": false
+    },
+    "appliedLimits": {
+      "type": "object",
+      "required": ["maxItems", "maxBytes"],
+      "properties": {
+        "maxItems": {
+          "$ref": "#/$defs/itemLimit"
+        },
+        "maxBytes": {
+          "$ref": "#/$defs/byteLimit"
+        }
+      },
+      "additionalProperties": false
+    },
+    "negotiatedLimits": {
+      "type": "object",
+      "required": ["maxRequestBytes", "maxResponseBytes", "maxPageItems"],
+      "properties": {
+        "maxRequestBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 16777216
+        },
+        "maxResponseBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 67108864
+        },
+        "maxPageItems": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "additionalProperties": false
+    },
+    "truncationReason": {
+      "enum": ["maxItems", "maxBytes", "providerDeadline", "providerLimit"]
+    },
+    "page": {
+      "type": "object",
+      "required": ["truncated", "returnedItems", "appliedLimits"],
+      "properties": {
+        "truncated": {
+          "type": "boolean"
+        },
+        "returnedItems": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "appliedLimits": {
+          "$ref": "#/$defs/appliedLimits"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/truncationReason"
+          }
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": ["truncated"]
+          },
+          "then": {
+            "required": ["reasons", "nextCursor"],
+            "properties": {
+              "reasons": true,
+              "nextCursor": true
+            }
+          },
+          "else": {
+            "properties": {
+              "reasons": false,
+              "nextCursor": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

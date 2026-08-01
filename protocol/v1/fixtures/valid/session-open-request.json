@@ -1,0 +1,19 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-0001",
+  "method": "session.open",
+  "params": {
+    "client": {
+      "name": "apppilotkit-cli",
+      "version": "0.1.0"
+    },
+    "protocol": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0
+    },
+    "requiredCapabilities": [
+      "session.core"
+    ]
+  }
+}

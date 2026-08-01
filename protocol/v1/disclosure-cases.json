@@ -1,0 +1,65 @@
+[
+  {
+    "name": "applied limits stay within request and session caps",
+    "negotiated": {
+      "maxResponseBytes": 65536,
+      "maxPageItems": 100
+    },
+    "requested": {
+      "maxBytes": 131072,
+      "maxItems": 500
+    },
+    "applied": {
+      "maxBytes": 65536,
+      "maxItems": 100
+    },
+    "valid": true
+  },
+  {
+    "name": "rejects applied item limits above the session cap",
+    "negotiated": {
+      "maxResponseBytes": 65536,
+      "maxPageItems": 100
+    },
+    "requested": {
+      "maxBytes": 65536,
+      "maxItems": 500
+    },
+    "applied": {
+      "maxBytes": 65536,
+      "maxItems": 101
+    },
+    "valid": false
+  },
+  {
+    "name": "uses the session byte cap when only maxItems is requested",
+    "negotiated": {
+      "maxResponseBytes": 65536,
+      "maxPageItems": 100
+    },
+    "requested": {
+      "maxItems": 50
+    },
+    "applied": {
+      "maxBytes": 65536,
+      "maxItems": 50
+    },
+    "valid": true
+  },
+  {
+    "name": "rejects applied byte limits above the request",
+    "negotiated": {
+      "maxResponseBytes": 1048576,
+      "maxPageItems": 500
+    },
+    "requested": {
+      "maxBytes": 65536,
+      "maxItems": 100
+    },
+    "applied": {
+      "maxBytes": 65537,
+      "maxItems": 100
+    },
+    "valid": false
+  }
+]

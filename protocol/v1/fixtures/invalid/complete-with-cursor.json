@@ -1,0 +1,9 @@
+{
+  "truncated": false,
+  "returnedItems": 24,
+  "appliedLimits": {
+    "maxItems": 100,
+    "maxBytes": 65536
+  },
+  "nextCursor": "cursor_unexpected"
+}

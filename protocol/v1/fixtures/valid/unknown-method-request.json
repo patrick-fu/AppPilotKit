@@ -1,0 +1,10 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-unknown",
+  "method": "inspect.unknown",
+  "params": {},
+  "context": {
+    "id": "session_f47ac10b58cc4372",
+    "generation": 4
+  }
+}
