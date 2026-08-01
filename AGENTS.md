@@ -38,6 +38,10 @@ Before changing architecture or public interfaces, read `docs/vision.md` and rel
 
 Issues and PRDs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
 
+### Triage labels
+
+This repo uses the default triage label vocabulary. See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
