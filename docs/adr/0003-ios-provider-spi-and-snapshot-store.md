@@ -39,8 +39,9 @@ regardless of request order.
 
 An adapter must convert raw platform state into a detached,
 value-semantic `RedactedProviderCapture` before returning. Provider-native
-fields use JSON-safe value types, and the store has no raw-capture type or
-unredacted bypass. The adapter owns classification and redaction because only
+fields use JSON-safe value types, including exact signed and unsigned 64-bit
+integers, and the store has no raw-capture type or unredacted bypass. The
+adapter owns classification and redaction because only
 it understands the native fields it emits; the runtime validates structure
 and JSON safety but does not attempt heuristic redaction.
 
@@ -98,9 +99,10 @@ existing snapshot is evicted. Otherwise the store evicts oldest generations
 until both bounds are satisfied.
 
 Evicted, invalidated, unknown, or scope-mismatched identities all resolve as
-`ui.snapshotExpired`. Runtime failures map to the existing `invalidParams`,
-`ui.snapshotExpired`, `resourceExhausted`, and `internalError` protocol kinds;
-this module adds no wire error kind.
+`ui.snapshotExpired`. Invalid caller input maps to `invalidParams`; provider
+failures and structurally invalid provider captures map to `internalError`
+without exposing provider-local node identities. Capacity failures map to
+`resourceExhausted`. This module adds no wire error kind.
 
 ## Consequences
 

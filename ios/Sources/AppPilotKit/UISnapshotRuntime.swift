@@ -58,6 +58,8 @@ public struct UIProviderDescriptor: Codable, Equatable, Sendable {
 public enum JSONValue: Equatable, Sendable {
   case null
   case bool(Bool)
+  case integer(Int64)
+  case unsignedInteger(UInt64)
   case number(Double)
   case string(String)
   case array([JSONValue])
@@ -71,6 +73,10 @@ extension JSONValue: Codable {
       self = .null
     } else if let value = try? container.decode(Bool.self) {
       self = .bool(value)
+    } else if let value = try? container.decode(Int64.self) {
+      self = .integer(value)
+    } else if let value = try? container.decode(UInt64.self) {
+      self = .unsignedInteger(value)
     } else if let value = try? container.decode(Double.self) {
       self = .number(value)
     } else if let value = try? container.decode(String.self) {
@@ -88,6 +94,10 @@ extension JSONValue: Codable {
     case .null:
       try container.encodeNil()
     case .bool(let value):
+      try container.encode(value)
+    case .integer(let value):
+      try container.encode(value)
+    case .unsignedInteger(let value):
       try container.encode(value)
     case .number(let value):
       try container.encode(value)
@@ -302,6 +312,10 @@ public enum UISnapshotRuntimeError: Error, Equatable, Sendable {
 }
 
 public actor UISnapshotRuntime {
+  private struct ProviderCaptureValidationError: Error {
+    let reason: String
+  }
+
   private struct StoredSnapshotRecord: Encodable {
     let scope: UISnapshotScope
     let identity: UISnapshotIdentity
@@ -397,8 +411,11 @@ public actor UISnapshotRuntime {
       }
     }
     let registeredNames = Set(providers.map(\.descriptor.name))
-    let requestedNames = Set(requestedProviderNames ?? providers.map(\.descriptor.name))
-    if let unknownName = requestedNames.first(where: { !registeredNames.contains($0) }) {
+    let requestedProviderList = requestedProviderNames ?? providers.map(\.descriptor.name)
+    let requestedNames = Set(requestedProviderList)
+    if let unknownName = requestedProviderList.first(where: {
+      !registeredNames.contains($0)
+    }) {
       throw UISnapshotRuntimeError.invalidParams("Unknown provider: \(unknownName)")
     }
     let selectedProviders = providers.filter { requestedNames.contains($0.descriptor.name) }
@@ -427,12 +444,11 @@ public actor UISnapshotRuntime {
     _ selectedProviders: [RegisteredProvider],
     in scope: UISnapshotScope
   ) async throws -> StoredUISnapshot {
-    let generation = nextGeneration
-    let token = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
-    let identity = UISnapshotIdentity(id: "snapshot_\(token)", generation: generation)
-    var storedSources: [StoredUISource] = []
-    var storedNodes: [StoredUINode] = []
-    var sourceIDs = Set<String>()
+    var providerCaptures:
+      [(
+        descriptor: UIProviderDescriptor,
+        capture: RedactedProviderCapture
+      )] = []
 
     for provider in selectedProviders {
       let captured: RedactedProviderCapture
@@ -447,16 +463,41 @@ public actor UISnapshotRuntime {
       }
       try Task.checkCancellation()
       guard !captured.sources.isEmpty else {
-        throw UISnapshotRuntimeError.invalidParams(
-          "Provider \(provider.descriptor.name) returned no sources"
+        throw UISnapshotRuntimeError.internalError(
+          "Provider \(provider.descriptor.name) returned an invalid capture"
         )
       }
-      for source in captured.sources {
-        try validate(
-          source: source,
-          from: provider.descriptor,
-          sourceIDs: &sourceIDs
+      providerCaptures.append((provider.descriptor, captured))
+    }
+
+    var sourceIDs = Set<String>()
+    for providerCapture in providerCaptures {
+      do {
+        for source in providerCapture.capture.sources {
+          try validate(
+            source: source,
+            from: providerCapture.descriptor,
+            sourceIDs: &sourceIDs
+          )
+        }
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        throw UISnapshotRuntimeError.internalError(
+          "Provider \(providerCapture.descriptor.name) returned an invalid capture"
         )
+      }
+      try Task.checkCancellation()
+    }
+
+    let generation = nextGeneration
+    let token = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+    let identity = UISnapshotIdentity(id: "snapshot_\(token)", generation: generation)
+    var storedSources: [StoredUISource] = []
+    var storedNodes: [StoredUINode] = []
+
+    for providerCapture in providerCaptures {
+      for source in providerCapture.capture.sources {
         let references = Dictionary(
           uniqueKeysWithValues: source.nodes.enumerated().map { offset, node in
             (node.id, "node_\(token)_\(storedNodes.count + offset + 1)")
@@ -504,13 +545,22 @@ public actor UISnapshotRuntime {
     do {
       storedBytes = try encoder.encode(record).count
     } catch {
-      throw UISnapshotRuntimeError.invalidParams(
-        "Provider capture is not JSON-safe"
+      throw UISnapshotRuntimeError.internalError(
+        "Validated provider capture could not be encoded"
       )
     }
+    try Task.checkCancellation()
     guard storedBytes <= limits.maximumStoredBytes else {
       throw UISnapshotRuntimeError.resourceExhausted(
         "Snapshot exceeds the configured byte capacity"
+      )
+    }
+    let (updatedStoredBytes, overflowed) = totalStoredBytes.addingReportingOverflow(
+      storedBytes
+    )
+    guard !overflowed else {
+      throw UISnapshotRuntimeError.resourceExhausted(
+        "Snapshot store byte accounting overflowed"
       )
     }
     let snapshot = StoredUISnapshot(
@@ -520,9 +570,10 @@ public actor UISnapshotRuntime {
       nodes: storedNodes,
       storedBytes: storedBytes
     )
+    try Task.checkCancellation()
     snapshots[identity] = snapshot
     snapshotOrder.append(identity)
-    totalStoredBytes += storedBytes
+    totalStoredBytes = updatedStoredBytes
     while snapshotOrder.count > limits.maximumSnapshotCount
       || totalStoredBytes > limits.maximumStoredBytes
     {
@@ -560,7 +611,7 @@ public actor UISnapshotRuntime {
     sourceIDs: inout Set<String>
   ) throws {
     guard source.provider == descriptor.name else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Source \(source.id) does not match provider \(descriptor.name)"
       )
     }
@@ -571,7 +622,7 @@ public actor UISnapshotRuntime {
         maximumLength: 64
       )
     else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Invalid source ID: \(source.id)"
       )
     }
@@ -582,12 +633,12 @@ public actor UISnapshotRuntime {
         maximumLength: 128
       )
     else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Invalid native schema for source \(source.id)"
       )
     }
     guard descriptor.platform == .iOS, source.platform == descriptor.platform else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Source \(source.id) is not an iOS source"
       )
     }
@@ -595,25 +646,25 @@ public actor UISnapshotRuntime {
       source.coordinateSpace.scale.isFinite,
       source.coordinateSpace.scale > 0
     else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Source \(source.id) has an invalid iOS coordinate space"
       )
     }
     guard sourceIDs.insert(source.id).inserted else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Duplicate source ID: \(source.id)"
       )
     }
     switch source.coverage {
     case .complete:
       guard source.limitations == nil else {
-        throw UISnapshotRuntimeError.invalidParams(
+        throw invalidCapture(
           "Complete source \(source.id) cannot declare limitations"
         )
       }
     case .partial:
       guard let limitations = source.limitations, !limitations.isEmpty else {
-        throw UISnapshotRuntimeError.invalidParams(
+        throw invalidCapture(
           "Partial source \(source.id) must declare limitations"
         )
       }
@@ -622,13 +673,13 @@ public actor UISnapshotRuntime {
           !$0.isEmpty && $0.unicodeScalars.count <= 256
         })
       else {
-        throw UISnapshotRuntimeError.invalidParams(
+        throw invalidCapture(
           "Source \(source.id) has invalid limitations"
         )
       }
     }
     guard !source.nodes.isEmpty else {
-      throw UISnapshotRuntimeError.invalidParams(
+      throw invalidCapture(
         "Source \(source.id) returned no nodes"
       )
     }
@@ -753,7 +804,7 @@ public actor UISnapshotRuntime {
 
   private static func isJSONSafe(_ value: JSONValue) -> Bool {
     switch value {
-    case .null, .bool, .string:
+    case .null, .bool, .integer, .unsignedInteger, .string:
       true
     case .number(let number):
       number.isFinite
@@ -767,7 +818,11 @@ public actor UISnapshotRuntime {
   private func invalidGraph(
     _ source: RedactedSourceCapture,
     _ reason: String
-  ) -> UISnapshotRuntimeError {
-    .invalidParams("Invalid graph for source \(source.id): \(reason)")
+  ) -> ProviderCaptureValidationError {
+    invalidCapture("Invalid graph for source \(source.id): \(reason)")
+  }
+
+  private func invalidCapture(_ reason: String) -> ProviderCaptureValidationError {
+    ProviderCaptureValidationError(reason: reason)
   }
 }

@@ -68,14 +68,14 @@ final class UISnapshotRuntimeTests: XCTestCase {
 
     do {
       _ = try await runtime.capture(
-        providers: ["missing.views"],
+        providers: ["z.missing", "a.missing"],
         in: UISnapshotScope(sessionID: "session-one", processGeneration: 1)
       )
       XCTFail("Expected an unknown provider failure")
     } catch {
       XCTAssertEqual(
         error as? UISnapshotRuntimeError,
-        .invalidParams("Unknown provider: missing.views")
+        .invalidParams("Unknown provider: z.missing")
       )
     }
   }
@@ -191,7 +191,7 @@ final class UISnapshotRuntimeTests: XCTestCase {
       _ = try await runtime.capture(in: scope)
       XCTFail("Expected an empty provider capture to fail")
     } catch let error as UISnapshotRuntimeError {
-      XCTAssertEqual(error.kind, .invalidParams)
+      XCTAssertEqual(error.kind, .internalError)
     }
 
     capture = makeSingleNodeCapture(
@@ -297,7 +297,7 @@ final class UISnapshotRuntimeTests: XCTestCase {
         )
         XCTFail("Expected invalid source metadata to fail: \(name)")
       } catch let error as UISnapshotRuntimeError {
-        XCTAssertEqual(error.kind, .invalidParams, name)
+        XCTAssertEqual(error.kind, .internalError, name)
       }
     }
   }
@@ -329,7 +329,7 @@ final class UISnapshotRuntimeTests: XCTestCase {
       )
       XCTFail("Expected an empty source to fail")
     } catch let error as UISnapshotRuntimeError {
-      XCTAssertEqual(error.kind, .invalidParams)
+      XCTAssertEqual(error.kind, .internalError)
     }
   }
 
@@ -453,8 +453,41 @@ final class UISnapshotRuntimeTests: XCTestCase {
         )
         XCTFail("Expected invalid graph to fail: \(name)")
       } catch let error as UISnapshotRuntimeError {
-        XCTAssertEqual(error.kind, .invalidParams, name)
+        XCTAssertEqual(error.kind, .internalError, name)
       }
+    }
+  }
+
+  @MainActor
+  func testProviderLocalIdentityIsNotExposedByValidationErrors() async throws {
+    let secretLocalID = "known-secret-local-id"
+    let provider = FixtureProvider(
+      descriptor: UIProviderDescriptor(name: "fixture.views", platform: .iOS),
+      capture: makeCapture(
+        provider: "fixture.views",
+        sourceID: "fixture.main",
+        nodes: [
+          RedactedNodeCapture(id: secretLocalID, depth: 0, childCount: 1),
+          RedactedNodeCapture(
+            id: secretLocalID,
+            parentID: secretLocalID,
+            childIndex: 0,
+            depth: 1,
+            childCount: 0
+          ),
+        ]
+      )
+    )
+    let runtime = try UISnapshotRuntime(providers: [provider])
+
+    do {
+      _ = try await runtime.capture(
+        in: UISnapshotScope(sessionID: "session-one", processGeneration: 1)
+      )
+      XCTFail("Expected provider graph validation to fail")
+    } catch let error as UISnapshotRuntimeError {
+      XCTAssertEqual(error.kind, .internalError)
+      XCTAssertFalse(String(describing: error).contains(secretLocalID))
     }
   }
 
@@ -566,9 +599,26 @@ final class UISnapshotRuntimeTests: XCTestCase {
         )
         XCTFail("Expected stored-contract validation failure: \(name)")
       } catch let error as UISnapshotRuntimeError {
-        XCTAssertEqual(error.kind, .invalidParams, name)
+        XCTAssertEqual(error.kind, .internalError, name)
       }
     }
+  }
+
+  func testJSONValuePreservesFullWidthNativeIntegers() throws {
+    let value = JSONValue.object([
+      "signed": .integer(Int64.max),
+      "unsigned": .unsignedInteger(UInt64.max),
+    ])
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+
+    let data = try encoder.encode(value)
+    let encoded = try XCTUnwrap(String(data: data, encoding: .utf8))
+    let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+
+    XCTAssertTrue(encoded.contains("9223372036854775807"))
+    XCTAssertTrue(encoded.contains("18446744073709551615"))
+    XCTAssertEqual(decoded, value)
   }
 
   @MainActor
