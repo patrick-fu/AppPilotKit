@@ -1,0 +1,94 @@
+[
+  {
+    "name": "selects the highest mutually supported minor",
+    "client": {
+      "requestId": "request-1",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 2,
+      "requiredCapabilities": ["session.core"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "capabilities": ["session.core"]
+    },
+    "response": {
+      "requestId": "request-1",
+      "major": 1,
+      "minor": 0,
+      "capabilities": ["session.core"]
+    },
+    "valid": true
+  },
+  {
+    "name": "rejects a response id mismatch",
+    "client": {
+      "requestId": "request-1",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "requiredCapabilities": []
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "capabilities": ["session.core"]
+    },
+    "response": {
+      "requestId": "request-2",
+      "major": 1,
+      "minor": 0,
+      "capabilities": ["session.core"]
+    },
+    "valid": false
+  },
+  {
+    "name": "rejects a selected minor outside the intersection",
+    "client": {
+      "requestId": "request-1",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 1,
+      "requiredCapabilities": []
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "capabilities": ["session.core"]
+    },
+    "response": {
+      "requestId": "request-1",
+      "major": 1,
+      "minor": 1,
+      "capabilities": ["session.core"]
+    },
+    "valid": false
+  },
+  {
+    "name": "rejects a missing required capability",
+    "client": {
+      "requestId": "request-1",
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "requiredCapabilities": ["inspect.snapshot"]
+    },
+    "server": {
+      "major": 1,
+      "minMinor": 0,
+      "maxMinor": 0,
+      "capabilities": ["session.core"]
+    },
+    "response": {
+      "requestId": "request-1",
+      "major": 1,
+      "minor": 0,
+      "capabilities": ["session.core"]
+    },
+    "valid": false
+  }
+]

@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1/session.schema.json",
+  "title": "AppPilotKit v1 session negotiation",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/openRequest"
+    },
+    {
+      "$ref": "#/$defs/openSuccess"
+    },
+    {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "capability": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+    },
+    "client": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "versionRange": {
+      "type": "object",
+      "required": ["major", "minMinor", "maxMinor"],
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minMinor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxMinor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "selectedVersion": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "openParams": {
+      "type": "object",
+      "required": ["client", "protocol"],
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/client"
+        },
+        "protocol": {
+          "$ref": "#/$defs/versionRange"
+        },
+        "requiredCapabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "openResult": {
+      "type": "object",
+      "required": ["context", "protocol", "capabilities", "limits"],
+      "properties": {
+        "context": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionContext"
+        },
+        "protocol": {
+          "$ref": "#/$defs/selectedVersion"
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        },
+        "limits": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/negotiatedLimits"
+        }
+      },
+      "additionalProperties": false
+    },
+    "openRequest": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/request"
+        },
+        {
+          "type": "object",
+          "required": ["params"],
+          "properties": {
+            "method": {
+              "const": "session.open"
+            },
+            "params": {
+              "$ref": "#/$defs/openParams"
+            },
+            "context": false
+          }
+        }
+      ]
+    },
+    "openSuccess": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/openResult"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

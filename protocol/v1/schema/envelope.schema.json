@@ -1,0 +1,364 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1/envelope.schema.json",
+  "title": "AppPilotKit v1 envelope",
+  "$ref": "#/$defs/message",
+  "$defs": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sessionContext": {
+      "type": "object",
+      "required": ["id", "generation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]{16,128}$"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "request": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "method"],
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^(?!rpc\\.)[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$"
+        },
+        "params": {
+          "type": "object"
+        },
+        "context": {
+          "$ref": "#/$defs/sessionContext"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sessionRequest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/request"
+        },
+        {
+          "type": "object",
+          "required": ["context"],
+          "properties": {
+            "method": {
+              "not": {
+                "const": "session.open"
+              }
+            },
+            "context": {
+              "$ref": "#/$defs/sessionContext"
+            }
+          }
+        }
+      ]
+    },
+    "openRequestEnvelope": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/request"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "session.open"
+            },
+            "context": false
+          }
+        }
+      ]
+    },
+    "profiledRequest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/openRequestEnvelope"
+        },
+        {
+          "$ref": "#/$defs/sessionRequest"
+        }
+      ]
+    },
+    "success": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "result": true
+      },
+      "additionalProperties": false
+    },
+    "errorKind": {
+      "enum": [
+        "parseError",
+        "invalidRequest",
+        "methodNotFound",
+        "invalidParams",
+        "internalError",
+        "incompatibleProtocol",
+        "sessionExpired",
+        "capabilityUnavailable",
+        "resourceExhausted",
+        "timeout",
+        "cursorExpired"
+      ]
+    },
+    "errorData": {
+      "type": "object",
+      "required": ["kind", "retryable"],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/errorKind"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "errorObject": {
+      "type": "object",
+      "required": ["code", "message", "data"],
+      "properties": {
+        "code": {
+          "enum": [-32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004, -32005, -32006]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "data": {
+          "$ref": "#/$defs/errorData"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32700 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "parseError" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32600 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "invalidRequest" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32601 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "methodNotFound" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32602 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "invalidParams" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32603 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "internalError" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32001 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "incompatibleProtocol" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32002 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "sessionExpired" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32003 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "capabilityUnavailable" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32004 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "resourceExhausted" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32005 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "timeout" } }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32006 },
+            "data": {
+              "type": "object",
+              "properties": { "kind": { "const": "cursorExpired" } }
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/requestId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/errorObject"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": { "const": -32700 }
+                }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "error": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "not": {
+                      "enum": [-32700, -32600]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/requestId"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "response": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/success"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
+    },
+    "message": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/profiledRequest"
+        },
+        {
+          "$ref": "#/$defs/response"
+        }
+      ]
+    }
+  }
+}

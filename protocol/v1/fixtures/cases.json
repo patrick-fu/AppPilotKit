@@ -1,0 +1,151 @@
+[
+  {
+    "name": "session open request",
+    "schema": "https://apppilotkit.dev/protocol/v1/session.schema.json#/$defs/openRequest",
+    "fixture": "valid/session-open-request.json",
+    "valid": true,
+    "semantic": "versionRange"
+  },
+  {
+    "name": "session open success",
+    "schema": "https://apppilotkit.dev/protocol/v1/session.schema.json#/$defs/openSuccess",
+    "fixture": "valid/session-open-success.json",
+    "valid": true
+  },
+  {
+    "name": "unknown namespaced method request",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json",
+    "fixture": "valid/unknown-method-request.json",
+    "valid": true
+  },
+  {
+    "name": "method not found error",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "valid/method-not-found-error.json",
+    "valid": true
+  },
+  {
+    "name": "incompatible protocol error",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "valid/incompatible-protocol-error.json",
+    "valid": true
+  },
+  {
+    "name": "parse error with null id",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "valid/parse-error.json",
+    "valid": true
+  },
+  {
+    "name": "requested output limits",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits",
+    "fixture": "valid/requested-output-limits.json",
+    "valid": true
+  },
+  {
+    "name": "complete disclosure",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page",
+    "fixture": "valid/disclosure-complete.json",
+    "valid": true,
+    "semantic": "returnedItems"
+  },
+  {
+    "name": "truncated disclosure",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page",
+    "fixture": "valid/disclosure-truncated.json",
+    "valid": true,
+    "semantic": "returnedItems"
+  },
+  {
+    "name": "numeric request id",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/request",
+    "fixture": "invalid/numeric-request-id.json",
+    "valid": false
+  },
+  {
+    "name": "batch request",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/request",
+    "fixture": "invalid/batch-request.json",
+    "valid": false
+  },
+  {
+    "name": "post-handshake request without session context",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json",
+    "fixture": "invalid/missing-session-context.json",
+    "valid": false
+  },
+  {
+    "name": "session open request with session context",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json",
+    "fixture": "invalid/session-open-with-context.json",
+    "valid": false
+  },
+  {
+    "name": "reserved JSON-RPC method namespace",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/request",
+    "fixture": "invalid/reserved-rpc-method.json",
+    "valid": false
+  },
+  {
+    "name": "response with result and error",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/response",
+    "fixture": "invalid/result-and-error-response.json",
+    "valid": false
+  },
+  {
+    "name": "reversed protocol minor range",
+    "schema": "https://apppilotkit.dev/protocol/v1/session.schema.json#/$defs/openRequest",
+    "fixture": "invalid/reversed-version-range.json",
+    "valid": false,
+    "semantic": "versionRange"
+  },
+  {
+    "name": "mismatched error code and kind",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "invalid/error-code-kind-mismatch.json",
+    "valid": false
+  },
+  {
+    "name": "parse error with string id",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "invalid/parse-error-string-id.json",
+    "valid": false
+  },
+  {
+    "name": "identified method error with null id",
+    "schema": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error",
+    "fixture": "invalid/method-error-null-id.json",
+    "valid": false
+  },
+  {
+    "name": "truncated disclosure without cursor",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page",
+    "fixture": "invalid/truncated-without-cursor.json",
+    "valid": false
+  },
+  {
+    "name": "complete disclosure with cursor",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page",
+    "fixture": "invalid/complete-with-cursor.json",
+    "valid": false
+  },
+  {
+    "name": "returned items exceed applied limit",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page",
+    "fixture": "invalid/returned-items-over-limit.json",
+    "valid": false,
+    "semantic": "returnedItems"
+  },
+  {
+    "name": "zero requested item limit",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits",
+    "fixture": "invalid/zero-item-limit.json",
+    "valid": false
+  },
+  {
+    "name": "requested byte limit below minimum",
+    "schema": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits",
+    "fixture": "invalid/byte-limit-below-minimum.json",
+    "valid": false
+  }
+]

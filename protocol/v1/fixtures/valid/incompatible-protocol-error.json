@@ -1,0 +1,15 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-0001",
+  "error": {
+    "code": -32001,
+    "message": "No compatible protocol version",
+    "data": {
+      "kind": "incompatibleProtocol",
+      "retryable": false,
+      "details": {
+        "supportedMajor": 1
+      }
+    }
+  }
+}

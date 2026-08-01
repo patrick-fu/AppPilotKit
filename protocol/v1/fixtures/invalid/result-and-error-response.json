@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-1",
+  "result": {},
+  "error": {
+    "code": -32603,
+    "message": "Internal error",
+    "data": {
+      "kind": "internalError",
+      "retryable": false
+    }
+  }
+}

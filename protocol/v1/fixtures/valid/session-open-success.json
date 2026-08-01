@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-0001",
+  "result": {
+    "context": {
+      "id": "session_f47ac10b58cc4372",
+      "generation": 4
+    },
+    "protocol": {
+      "major": 1,
+      "minor": 0
+    },
+    "capabilities": [
+      "session.core"
+    ],
+    "limits": {
+      "maxRequestBytes": 65536,
+      "maxResponseBytes": 1048576,
+      "maxPageItems": 500
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "truncated": false,
+  "returnedItems": 101,
+  "appliedLimits": {
+    "maxItems": 100,
+    "maxBytes": 65536
+  }
+}

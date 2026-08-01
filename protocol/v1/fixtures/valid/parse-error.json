@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": null,
+  "error": {
+    "code": -32700,
+    "message": "Parse error",
+    "data": {
+      "kind": "parseError",
+      "retryable": false
+    }
+  }
+}
