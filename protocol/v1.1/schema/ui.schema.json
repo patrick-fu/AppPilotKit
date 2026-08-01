@@ -1,0 +1,767 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1.1/ui.schema.json",
+  "title": "AppPilotKit v1.1 UI snapshot and inspection",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/snapshotRequest"
+    },
+    {
+      "$ref": "#/$defs/snapshotSuccess"
+    },
+    {
+      "$ref": "#/$defs/inspectRequest"
+    },
+    {
+      "$ref": "#/$defs/inspectSuccess"
+    },
+    {
+      "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^snapshot_[A-Za-z0-9._~-]{8,120}$"
+    },
+    "nodeRef": {
+      "type": "string",
+      "pattern": "^node_[A-Za-z0-9._~-]{8,120}$"
+    },
+    "sourceId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9._-]{0,63}$"
+    },
+    "providerName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "maxLength": 128
+    },
+    "snapshotIdentity": {
+      "type": "object",
+      "required": ["id", "generation"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/snapshotId"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "point": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "rect": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number",
+          "minimum": 0
+        },
+        "height": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "coordinateSpace": {
+      "type": "object",
+      "required": ["origin", "unit", "scale"],
+      "properties": {
+        "origin": {
+          "const": "screen"
+        },
+        "unit": {
+          "enum": ["point", "pixel"]
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["id", "platform", "provider", "representation", "nativeSchema", "coordinateSpace", "rootRef", "coverage"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "platform": {
+          "enum": ["ios", "android"]
+        },
+        "provider": {
+          "$ref": "#/$defs/providerName"
+        },
+        "representation": {
+          "enum": ["native", "semantics", "accessibility"]
+        },
+        "nativeSchema": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]*@[1-9][0-9]*$",
+          "maxLength": 128
+        },
+        "coordinateSpace": {
+          "$ref": "#/$defs/coordinateSpace"
+        },
+        "rootRef": {
+          "$ref": "#/$defs/nodeRef"
+        },
+        "coverage": {
+          "enum": ["complete", "partial"]
+        },
+        "limitations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "coverage": {
+                "const": "partial"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": ["limitations"],
+            "properties": {
+              "limitations": true
+            }
+          },
+          "else": {
+            "type": "object",
+            "properties": {
+              "limitations": false
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["platform"],
+            "properties": {
+              "platform": {
+                "const": "ios"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "coordinateSpace": {
+                "type": "object",
+                "properties": {
+                  "unit": {
+                    "const": "point"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": ["platform"],
+            "properties": {
+              "platform": {
+                "const": "android"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "coordinateSpace": {
+                "type": "object",
+                "properties": {
+                  "unit": {
+                    "const": "pixel"
+                  },
+                  "scale": {
+                    "const": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "nodeIndex": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "className": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "typeName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "traits": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "frame": {
+          "$ref": "#/$defs/rect"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "interactive": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "node": {
+      "type": "object",
+      "required": ["ref", "sourceId", "depth", "childCount"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/nodeRef"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/sourceId"
+        },
+        "parentRef": {
+          "$ref": "#/$defs/nodeRef"
+        },
+        "childIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "childCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "$ref": "#/$defs/nodeIndex"
+        },
+        "native": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["depth"],
+            "properties": {
+              "depth": {
+                "const": 0
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "parentRef": false,
+              "childIndex": false
+            }
+          },
+          "else": {
+            "type": "object",
+            "required": ["parentRef", "childIndex"],
+            "properties": {
+              "parentRef": true,
+              "childIndex": true
+            }
+          }
+        }
+      ]
+    },
+    "selection": {
+      "type": "object",
+      "required": ["mode", "totalNodes", "selectedNodes", "criteria"],
+      "properties": {
+        "mode": {
+          "enum": ["agent", "full"]
+        },
+        "totalNodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "selectedNodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["all", "root", "visible", "interactive", "ancestor"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "stringPredicate": {
+      "type": "object",
+      "required": ["operator", "value", "caseSensitive"],
+      "properties": {
+        "operator": {
+          "enum": ["exact", "prefix", "suffix", "contains"]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "caseSensitive": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["caseSensitive"],
+            "properties": {
+              "caseSensitive": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "pattern": "^[\\u0000-\\u007F]+$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "traitsPredicate": {
+      "type": "object",
+      "required": ["mode", "values"],
+      "properties": {
+        "mode": {
+          "enum": ["all", "any"]
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "geometryPredicate": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["intersects"],
+          "properties": {
+            "intersects": {
+              "$ref": "#/$defs/rect"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["containsPoint"],
+          "properties": {
+            "containsPoint": {
+              "$ref": "#/$defs/point"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "selector": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "withinRef": {
+          "$ref": "#/$defs/nodeRef"
+        },
+        "sourceIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceId"
+          }
+        },
+        "identifier": {
+          "$ref": "#/$defs/stringPredicate"
+        },
+        "text": {
+          "$ref": "#/$defs/stringPredicate"
+        },
+        "className": {
+          "$ref": "#/$defs/stringPredicate"
+        },
+        "typeName": {
+          "$ref": "#/$defs/stringPredicate"
+        },
+        "traits": {
+          "$ref": "#/$defs/traitsPredicate"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "interactive": {
+          "type": "boolean"
+        },
+        "geometry": {
+          "$ref": "#/$defs/geometryPredicate"
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "type": "object",
+        "required": ["withinRef"],
+        "properties": {
+          "withinRef": true
+        },
+        "maxProperties": 1
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": ["geometry"],
+            "properties": {
+              "geometry": true
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": ["sourceIds"],
+            "properties": {
+              "sourceIds": {
+                "type": "array",
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["refs"],
+          "properties": {
+            "refs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/nodeRef"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["query"],
+          "properties": {
+            "query": {
+              "$ref": "#/$defs/selector"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "traversal": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "ancestors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "descendantsDepth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "siblings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshotInitialParams": {
+      "type": "object",
+      "properties": {
+        "selection": {
+          "enum": ["agent", "full"]
+        },
+        "detail": {
+          "enum": ["compact", "native"]
+        },
+        "providers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/providerName"
+          }
+        },
+        "limits": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits"
+        }
+      },
+      "additionalProperties": false
+    },
+    "continuationParams": {
+      "type": "object",
+      "required": ["snapshot", "cursor"],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/snapshotIdentity"
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshotParams": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/snapshotInitialParams"
+        },
+        {
+          "$ref": "#/$defs/continuationParams"
+        }
+      ]
+    },
+    "inspectInitialParams": {
+      "type": "object",
+      "required": ["snapshot", "target"],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/snapshotIdentity"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "traversal": {
+          "$ref": "#/$defs/traversal"
+        },
+        "detail": {
+          "enum": ["compact", "native"]
+        },
+        "limits": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inspectParams": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/inspectInitialParams"
+        },
+        {
+          "$ref": "#/$defs/continuationParams"
+        }
+      ]
+    },
+    "snapshotResult": {
+      "type": "object",
+      "required": ["snapshot", "sources", "selection", "nodes", "page"],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/snapshotIdentity"
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "page": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inspectResult": {
+      "type": "object",
+      "required": ["snapshot", "matchedRefs", "nodes", "page"],
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/snapshotIdentity"
+        },
+        "matchedRefs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nodeRef"
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          }
+        },
+        "page": {
+          "$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page"
+        }
+      },
+      "additionalProperties": false
+    },
+    "snapshotRequest": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/sessionRequest"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "ui.snapshot"
+            },
+            "params": {
+              "$ref": "#/$defs/snapshotParams"
+            }
+          }
+        }
+      ]
+    },
+    "inspectRequest": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/sessionRequest"
+        },
+        {
+          "type": "object",
+          "required": ["params"],
+          "properties": {
+            "method": {
+              "const": "ui.inspect"
+            },
+            "params": {
+              "$ref": "#/$defs/inspectParams"
+            }
+          }
+        }
+      ]
+    },
+    "snapshotSuccess": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/success"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/snapshotResult"
+            }
+          }
+        }
+      ]
+    },
+    "inspectSuccess": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/success"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/inspectResult"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

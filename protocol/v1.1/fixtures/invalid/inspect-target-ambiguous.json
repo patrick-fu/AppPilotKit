@@ -1,0 +1,21 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-invalid",
+  "method": "ui.inspect",
+  "params": {
+    "snapshot": {
+      "id": "snapshot_a81d34f9cbe24d4e",
+      "generation": 12
+    },
+    "target": {
+      "refs": ["node_loginbutton01"],
+      "query": {
+        "visible": true
+      }
+    }
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

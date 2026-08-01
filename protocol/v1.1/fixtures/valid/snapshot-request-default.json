@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-1",
+  "method": "ui.snapshot",
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

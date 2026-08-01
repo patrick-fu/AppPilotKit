@@ -1,0 +1,33 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-page-1",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": ["node_loginbutton01"],
+    "nodes": [
+      {
+        "ref": "node_uikitroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 2,
+        "index": {"className": "UIWindow", "visible": true}
+      },
+      {
+        "ref": "node_loginbutton01",
+        "sourceId": "uikit.main",
+        "parentRef": "node_uikitroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0,
+        "index": {"text": "Log in", "className": "UIButton", "interactive": true}
+      }
+    ],
+    "page": {
+      "truncated": true,
+      "returnedItems": 2,
+      "appliedLimits": {"maxItems": 2, "maxBytes": 65536},
+      "reasons": ["maxItems"],
+      "nextCursor": "cursor_inspect_page_2"
+    }
+  }
+}

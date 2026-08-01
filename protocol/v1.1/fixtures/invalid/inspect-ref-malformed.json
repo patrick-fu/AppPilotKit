@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-bad-ref",
+  "method": "ui.inspect",
+  "params": {
+    "snapshot": {
+      "id": "snapshot_a81d34f9cbe24d4e",
+      "generation": 12
+    },
+    "target": {
+      "refs": ["login-button"]
+    }
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-1",
+  "result": {
+    "snapshot": {"id": "snapshot_compactnative1", "generation": 1},
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_compactroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 1,
+      "selectedNodes": 1,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {
+        "ref": "node_compactroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 0,
+        "index": {"className": "UIWindow"},
+        "native": {"windowLevel": 0}
+      }
+    ],
+    "page": {"truncated": false, "returnedItems": 1, "appliedLimits": {"maxItems": 10, "maxBytes": 8192}}
+  }
+}

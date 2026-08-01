@@ -1,0 +1,30 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-2",
+  "result": {
+    "snapshot": {"id": "snapshot_limitdiff123", "generation": 1},
+    "sources": [
+      {
+        "id": "compose.main",
+        "platform": "android",
+        "provider": "compose.semantics",
+        "representation": "semantics",
+        "nativeSchema": "compose.semantics@1",
+        "coordinateSpace": {"origin": "screen", "unit": "pixel", "scale": 1},
+        "rootRef": "node_limitroot0001",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {"mode": "full", "totalNodes": 1, "selectedNodes": 1, "criteria": ["all"]},
+    "nodes": [
+      {
+        "ref": "node_limitroot0001",
+        "sourceId": "compose.main",
+        "depth": 0,
+        "childCount": 0,
+        "native": {"mergeDescendants": false}
+      }
+    ],
+    "page": {"truncated": false, "returnedItems": 1, "appliedLimits": {"maxItems": 3, "maxBytes": 65536}}
+  }
+}

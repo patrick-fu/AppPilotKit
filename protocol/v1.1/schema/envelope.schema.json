@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json",
+  "title": "AppPilotKit v1.1 envelope extensions",
+  "$ref": "#/$defs/message",
+  "$defs": {
+    "requestId": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/requestId"
+    },
+    "sessionContext": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionContext"
+    },
+    "sessionRequest": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"
+    },
+    "profiledRequest": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/profiledRequest"
+    },
+    "success": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"
+    },
+    "uiErrorData": {
+      "type": "object",
+      "required": ["kind", "retryable"],
+      "properties": {
+        "kind": {
+          "enum": ["ui.snapshotExpired", "ui.referenceNotFound"]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "uiErrorObject": {
+      "type": "object",
+      "required": ["code", "message", "data"],
+      "properties": {
+        "code": {
+          "enum": [-32010, -32011]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "data": {
+          "$ref": "#/$defs/uiErrorData"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32010 },
+            "data": {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "ui.snapshotExpired" },
+                "retryable": { "const": false }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": { "const": -32011 },
+            "data": {
+              "type": "object",
+              "properties": {
+                "kind": { "const": "ui.referenceNotFound" },
+                "retryable": { "const": false }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "uiError": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "properties": {
+        "jsonrpc": {
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/requestId"
+        },
+        "error": {
+          "$ref": "#/$defs/uiErrorObject"
+        }
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "oneOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/error"
+        },
+        {
+          "$ref": "#/$defs/uiError"
+        }
+      ]
+    },
+    "response": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/success"
+        },
+        {
+          "$ref": "#/$defs/error"
+        }
+      ]
+    },
+    "message": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/profiledRequest"
+        },
+        {
+          "$ref": "#/$defs/response"
+        }
+      ]
+    }
+  }
+}

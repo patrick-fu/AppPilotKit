@@ -1,0 +1,48 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-invalid",
+  "result": {
+    "snapshot": {"id": "snapshot_badparent01", "generation": 22},
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_validroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 2,
+      "selectedNodes": 2,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {
+        "ref": "node_validroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 1,
+        "index": {"className": "UIWindow"}
+      },
+      {
+        "ref": "node_orphanchild01",
+        "sourceId": "uikit.main",
+        "parentRef": "node_unknownparent01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0,
+        "index": {"className": "UILabel"}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 2,
+      "appliedLimits": {"maxItems": 20, "maxBytes": 65536}
+    }
+  }
+}

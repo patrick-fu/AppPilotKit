@@ -1,0 +1,40 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-sibling-order",
+  "result": {
+    "snapshot": {"id": "snapshot_siblingorder1", "generation": 1},
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_siblingroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {"mode": "full", "totalNodes": 3, "selectedNodes": 3, "criteria": ["all"]},
+    "nodes": [
+      {"ref": "node_siblingroot01", "sourceId": "uikit.main", "depth": 0, "childCount": 2},
+      {
+        "ref": "node_siblingsecond",
+        "sourceId": "uikit.main",
+        "parentRef": "node_siblingroot01",
+        "childIndex": 1,
+        "depth": 1,
+        "childCount": 0
+      },
+      {
+        "ref": "node_siblingfirst1",
+        "sourceId": "uikit.main",
+        "parentRef": "node_siblingroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0
+      }
+    ],
+    "page": {"truncated": false, "returnedItems": 3, "appliedLimits": {"maxItems": 10, "maxBytes": 8192}}
+  }
+}

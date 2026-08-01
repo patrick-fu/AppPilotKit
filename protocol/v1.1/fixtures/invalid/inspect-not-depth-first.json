@@ -1,0 +1,36 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-dfs-order",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": ["node_inspectchild0"],
+    "nodes": [
+      {"ref": "node_inspectroot01", "sourceId": "uikit.main", "depth": 0, "childCount": 2},
+      {
+        "ref": "node_inspectchild0",
+        "sourceId": "uikit.main",
+        "parentRef": "node_inspectroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 1
+      },
+      {
+        "ref": "node_inspectchild1",
+        "sourceId": "uikit.main",
+        "parentRef": "node_inspectroot01",
+        "childIndex": 1,
+        "depth": 1,
+        "childCount": 0
+      },
+      {
+        "ref": "node_inspectgrand1",
+        "sourceId": "uikit.main",
+        "parentRef": "node_inspectchild0",
+        "childIndex": 0,
+        "depth": 2,
+        "childCount": 0
+      }
+    ],
+    "page": {"truncated": false, "returnedItems": 4, "appliedLimits": {"maxItems": 10, "maxBytes": 8192}}
+  }
+}

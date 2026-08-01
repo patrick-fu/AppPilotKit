@@ -1,0 +1,27 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-page-2",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": [],
+    "nodes": [
+      {
+        "ref": "node_uikitroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 2,
+        "index": {"className": "UIWindow", "visible": true}
+      },
+      {
+        "ref": "node_cancelbutton01",
+        "sourceId": "uikit.main",
+        "parentRef": "node_uikitroot01",
+        "childIndex": 1,
+        "depth": 1,
+        "childCount": 0,
+        "index": {"text": "Cancel", "className": "UIButton", "interactive": true}
+      }
+    ],
+    "page": {"truncated": false, "returnedItems": 2, "appliedLimits": {"maxItems": 2, "maxBytes": 65536}}
+  }
+}

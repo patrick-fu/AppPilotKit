@@ -1,0 +1,28 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-ref",
+  "method": "ui.inspect",
+  "params": {
+    "snapshot": {
+      "id": "snapshot_a81d34f9cbe24d4e",
+      "generation": 12
+    },
+    "target": {
+      "refs": ["node_loginbutton01"]
+    },
+    "traversal": {
+      "ancestors": 1,
+      "descendantsDepth": 2,
+      "siblings": 1
+    },
+    "detail": "native",
+    "limits": {
+      "maxItems": 20,
+      "maxBytes": 65536
+    }
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}

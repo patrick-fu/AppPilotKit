@@ -1,0 +1,100 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-1",
+  "result": {
+    "snapshot": {
+      "id": "snapshot_a81d34f9cbe24d4e",
+      "generation": 12
+    },
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_uikitroot01",
+        "coverage": "complete"
+      },
+      {
+        "id": "swiftui.overlay",
+        "platform": "ios",
+        "provider": "swiftui.accessibility",
+        "representation": "accessibility",
+        "nativeSchema": "swiftui.accessibility@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_swiftroot01",
+        "coverage": "partial",
+        "limitations": ["Raw SwiftUI view identity is unavailable"]
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 7,
+      "selectedNodes": 4,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {
+        "ref": "node_uikitroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 1,
+        "index": {
+          "className": "UIWindow",
+          "frame": {"x": 0, "y": 0, "width": 393, "height": 852},
+          "visible": true
+        }
+      },
+      {
+        "ref": "node_loginbutton01",
+        "sourceId": "uikit.main",
+        "parentRef": "node_uikitroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0,
+        "index": {
+          "identifier": "login_button",
+          "text": "Log in",
+          "className": "UIButton",
+          "traits": ["button"],
+          "visible": true,
+          "interactive": true
+        }
+      },
+      {
+        "ref": "node_swiftroot01",
+        "sourceId": "swiftui.overlay",
+        "depth": 0,
+        "childCount": 1,
+        "index": {
+          "typeName": "AccessibilityRoot",
+          "visible": true
+        }
+      },
+      {
+        "ref": "node_welcometext01",
+        "sourceId": "swiftui.overlay",
+        "parentRef": "node_swiftroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0,
+        "index": {
+          "text": "Welcome",
+          "typeName": "StaticText",
+          "traits": ["staticText"],
+          "visible": true
+        }
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 4,
+      "appliedLimits": {
+        "maxItems": 100,
+        "maxBytes": 65536
+      }
+    }
+  }
+}

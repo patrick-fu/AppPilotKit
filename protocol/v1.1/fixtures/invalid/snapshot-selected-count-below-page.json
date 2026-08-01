@@ -1,0 +1,41 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-selected-count",
+  "result": {
+    "snapshot": {"id": "snapshot_selectedcount1", "generation": 1},
+    "sources": [
+      {
+        "id": "uikit.main",
+        "platform": "ios",
+        "provider": "uikit.views",
+        "representation": "native",
+        "nativeSchema": "uikit.view@1",
+        "coordinateSpace": {"origin": "screen", "unit": "point", "scale": 3},
+        "rootRef": "node_selectedroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "agent",
+      "totalNodes": 3,
+      "selectedNodes": 1,
+      "criteria": ["root", "visible", "interactive", "ancestor"]
+    },
+    "nodes": [
+      {"ref": "node_selectedroot01", "sourceId": "uikit.main", "depth": 0, "childCount": 1},
+      {
+        "ref": "node_selectedchild1",
+        "sourceId": "uikit.main",
+        "parentRef": "node_selectedroot01",
+        "childIndex": 0,
+        "depth": 1,
+        "childCount": 0
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 2,
+      "appliedLimits": {"maxItems": 10, "maxBytes": 8192}
+    }
+  }
+}

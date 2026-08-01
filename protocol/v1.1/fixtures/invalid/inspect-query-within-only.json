@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-within-only",
+  "method": "ui.inspect",
+  "params": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "target": {
+      "query": {"withinRef": "node_uikitroot01"}
+    }
+  },
+  "context": {"id": "session_8b5c0f1f17a44b72", "generation": 7}
+}

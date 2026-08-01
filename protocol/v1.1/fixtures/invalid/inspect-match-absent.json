@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-invalid",
+  "result": {
+    "snapshot": {"id": "snapshot_a81d34f9cbe24d4e", "generation": 12},
+    "matchedRefs": ["node_missingmatch01"],
+    "nodes": [
+      {
+        "ref": "node_uikitroot01",
+        "sourceId": "uikit.main",
+        "depth": 0,
+        "childCount": 0,
+        "index": {"className": "UIWindow"}
+      }
+    ],
+    "page": {
+      "truncated": false,
+      "returnedItems": 1,
+      "appliedLimits": {"maxItems": 20, "maxBytes": 65536}
+    }
+  }
+}

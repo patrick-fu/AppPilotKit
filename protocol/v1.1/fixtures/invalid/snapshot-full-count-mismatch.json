@@ -1,0 +1,41 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-snapshot-invalid",
+  "result": {
+    "snapshot": {"id": "snapshot_badfull01", "generation": 24},
+    "sources": [
+      {
+        "id": "compose.main",
+        "platform": "android",
+        "provider": "compose.semantics",
+        "representation": "semantics",
+        "nativeSchema": "compose.semantics@1",
+        "coordinateSpace": {"origin": "screen", "unit": "pixel", "scale": 1},
+        "rootRef": "node_fullroot01",
+        "coverage": "complete"
+      }
+    ],
+    "selection": {
+      "mode": "full",
+      "totalNodes": 2,
+      "selectedNodes": 1,
+      "criteria": ["all"]
+    },
+    "nodes": [
+      {
+        "ref": "node_fullroot01",
+        "sourceId": "compose.main",
+        "depth": 0,
+        "childCount": 1,
+        "index": {"typeName": "Root"}
+      }
+    ],
+    "page": {
+      "truncated": true,
+      "returnedItems": 1,
+      "appliedLimits": {"maxItems": 1, "maxBytes": 65536},
+      "reasons": ["maxItems"],
+      "nextCursor": "cursor_bad_full"
+    }
+  }
+}

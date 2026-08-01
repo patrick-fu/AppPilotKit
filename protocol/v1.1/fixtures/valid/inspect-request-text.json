@@ -1,0 +1,27 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-inspect-text",
+  "method": "ui.inspect",
+  "params": {
+    "snapshot": {
+      "id": "snapshot_a81d34f9cbe24d4e",
+      "generation": 12
+    },
+    "target": {
+      "query": {
+        "text": {
+          "operator": "contains",
+          "value": "welcome",
+          "caseSensitive": false
+        }
+      }
+    },
+    "traversal": {
+      "ancestors": 1
+    }
+  },
+  "context": {
+    "id": "session_8b5c0f1f17a44b72",
+    "generation": 7
+  }
+}
