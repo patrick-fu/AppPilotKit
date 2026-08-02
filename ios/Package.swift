@@ -9,10 +9,16 @@ let package = Package(
     .macOS(.v13),
   ],
   products: [
-    .library(name: "AppPilotKit", targets: ["AppPilotKit"])
+    .library(name: "AppPilotKit", targets: ["AppPilotKit"]),
+    .library(name: "AppPilotKitUIKit", targets: ["AppPilotKitUIKit"]),
   ],
   targets: [
     .target(name: "AppPilotKit"),
+    .target(name: "AppPilotKitUIKit", dependencies: ["AppPilotKit"]),
     .testTarget(name: "AppPilotKitTests", dependencies: ["AppPilotKit"]),
+    .testTarget(
+      name: "AppPilotKitUIKitTests",
+      dependencies: ["AppPilotKit", "AppPilotKitUIKit"]
+    ),
   ]
 )
