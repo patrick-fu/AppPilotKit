@@ -45,9 +45,10 @@ The foundation uses:
 - checked-in Cargo locks, exact direct dependency pins for sensitive contract
   tooling, and native arm64/x86_64 CI.
 
-Repository JSON Schema remains the protocol source of truth. Rust types never
-regenerate `protocol/` schemas. Rust-owned CLI schemas may use pinned generation
-settings only when their checked-in output is golden- and meta-schema-tested.
+Checked-in repository JSON Schema remains the source of truth for both protocol
+and Rust-owned CLI contracts. Rust types may be generated from those schemas
+with pinned settings, but Rust tooling never authors, regenerates, or replaces
+the checked-in schemas.
 
 Platform processes and tunnels sit behind injected internal adapters. Owned
 child processes use process groups where supported; cancellation follows a
