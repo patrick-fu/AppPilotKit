@@ -131,7 +131,7 @@ The rounded results combine the initial research run and repeated clean runs of 
 For peak RSS, each already-built command received one unmeasured warm-up invocation, then 20 invocations under macOS `/usr/bin/time -lp`; the reported value is the arithmetic mean of its `maximum resident set size` field. The 200-invocation result used this exact loop shape for each command:
 
 ```sh
-/usr/bin/time -p sh -c '
+/usr/bin/time -p sh -eu -c '
   i=0
   while [ "$i" -lt 200 ]; do
     PROBE_COMMAND emit --value ok >/dev/null
