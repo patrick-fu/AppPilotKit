@@ -1,6 +1,5 @@
 use apppilotkit_rust_foundation_spike::{command_manifest, run_cli};
 use serde_json::Value;
-use std::collections::HashSet;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -123,7 +122,7 @@ fn assert_complete_manifest(manifest: &Value) {
         .collect::<Vec<_>>();
     assert_eq!(paths, ["spike", "spike emit", "spike manifest"]);
 
-    let argument_keys = commands
+    let argument_records = commands
         .iter()
         .flat_map(|command| {
             let path = command["path"].as_str().expect("command path");
@@ -132,21 +131,39 @@ fn assert_complete_manifest(manifest: &Value) {
                 .expect("arguments array")
                 .iter()
                 .map(move |argument| {
-                    format!("{path}:{}", argument["id"].as_str().expect("argument id"))
+                    (
+                        format!("{path}:{}", argument["id"].as_str().expect("argument id")),
+                        argument["long"].as_str().map(str::to_owned),
+                        argument["short"].as_str().map(str::to_owned),
+                        argument["aliases"]
+                            .as_array()
+                            .expect("aliases array")
+                            .iter()
+                            .map(|alias| alias.as_str().expect("alias").to_owned())
+                            .collect::<Vec<_>>(),
+                        argument["required"].as_bool().expect("required flag"),
+                    )
                 })
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        argument_keys.into_iter().collect::<HashSet<_>>(),
-        HashSet::from([
-            "spike:help".to_owned(),
-            "spike:version".to_owned(),
-            "spike emit:format".to_owned(),
-            "spike emit:help".to_owned(),
-            "spike emit:outcome".to_owned(),
-            "spike emit:summary".to_owned(),
-            "spike manifest:help".to_owned(),
-        ])
+        argument_records,
+        [
+            ("spike:help", Some("help"), Some("h")),
+            ("spike:version", Some("version"), Some("V")),
+            ("spike emit:format", Some("format"), Some("f")),
+            ("spike emit:help", Some("help"), Some("h")),
+            ("spike emit:outcome", Some("outcome"), None),
+            ("spike emit:summary", Some("summary"), None),
+            ("spike manifest:help", Some("help"), Some("h")),
+        ]
+        .map(|(key, long, short)| (
+            key.to_owned(),
+            long.map(str::to_owned),
+            short.map(str::to_owned),
+            Vec::new(),
+            false,
+        ))
     );
 }
 
