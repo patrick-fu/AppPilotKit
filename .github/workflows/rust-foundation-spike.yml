@@ -116,6 +116,7 @@ jobs:
             >"../artifacts/rust-foundation-${{ matrix.target }}/cargo-audit.json"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: rust-foundation-${{ matrix.target }}
           path: artifacts/rust-foundation-${{ matrix.target }}

@@ -58,20 +58,70 @@ fn document_and_jsonl_outputs_are_newline_framed_and_keep_diagnostics_separate()
 }
 
 #[test]
+fn jsonl_terminal_event_and_process_exit_status_describe_the_same_outcome() {
+    for (outcome, terminal_type, exit_code) in [
+        ("succeeded", "run.succeeded", 0),
+        ("failed", "run.failed", 1),
+        ("cancelled", "run.cancelled", 130),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_apppilotkit-rust-foundation-spike"))
+            .args(["emit", "--format", "jsonl", "--outcome", outcome])
+            .stdin(Stdio::null())
+            .output()
+            .expect("outcome process should run");
+        assert_eq!(output.status.code(), Some(exit_code));
+        assert!(output.stderr.is_empty());
+        let events = output
+            .stdout
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice::<Value>(line).expect("JSONL event"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event["terminal"] == true)
+                .count(),
+            1
+        );
+        let terminal = events.last().expect("terminal event");
+        assert_eq!(terminal["type"], terminal_type);
+        assert_eq!(terminal["result"]["outcome"], outcome);
+    }
+}
+
+#[test]
+fn help_and_version_are_successful_stdout_responses() {
+    for argument in ["--help", "--version"] {
+        let library = run_cli(["spike", argument]);
+        assert_eq!(library.exit_code, 0, "{argument} should succeed");
+        assert!(library.stderr.is_empty());
+        assert_eq!(library.stdout.last(), Some(&b'\n'));
+
+        let binary = Command::new(env!("CARGO_BIN_EXE_apppilotkit-rust-foundation-spike"))
+            .arg(argument)
+            .stdin(Stdio::null())
+            .output()
+            .expect("help or version process should run");
+        assert!(binary.status.success(), "{argument} should succeed");
+        assert!(binary.stderr.is_empty());
+        assert_eq!(binary.stdout.last(), Some(&b'\n'));
+    }
+}
+
+#[test]
 fn manifest_contains_each_public_command_and_argument_once() {
     let manifest = command_manifest();
+    assert_complete_manifest(&manifest);
+}
+
+fn assert_complete_manifest(manifest: &Value) {
     let commands = manifest["commands"].as_array().expect("commands array");
     let paths = commands
         .iter()
         .map(|command| command["path"].as_str().expect("command path"))
         .collect::<Vec<_>>();
-    assert!(paths.contains(&"spike"));
-    assert!(paths.contains(&"spike emit"));
-    assert!(paths.contains(&"spike manifest"));
-    assert_eq!(
-        paths.iter().copied().collect::<HashSet<_>>().len(),
-        paths.len()
-    );
+    assert_eq!(paths, ["spike", "spike emit", "spike manifest"]);
 
     let argument_keys = commands
         .iter()
@@ -87,8 +137,16 @@ fn manifest_contains_each_public_command_and_argument_once() {
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        argument_keys.iter().collect::<HashSet<_>>().len(),
-        argument_keys.len()
+        argument_keys.into_iter().collect::<HashSet<_>>(),
+        HashSet::from([
+            "spike:help".to_owned(),
+            "spike:version".to_owned(),
+            "spike emit:format".to_owned(),
+            "spike emit:help".to_owned(),
+            "spike emit:outcome".to_owned(),
+            "spike emit:summary".to_owned(),
+            "spike manifest:help".to_owned(),
+        ])
     );
 }
 
@@ -105,11 +163,32 @@ fn manifest_black_box_needs_no_stdin_or_environment() {
     assert!(output.stderr.is_empty());
     assert_eq!(output.stdout.last(), Some(&b'\n'));
     let parsed: Value = serde_json::from_slice(&output.stdout).expect("manifest should be JSON");
-    assert!(
-        parsed["commands"]
-            .as_array()
-            .is_some_and(|commands| !commands.is_empty())
-    );
+    assert_complete_manifest(&parsed);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn manifest_black_box_succeeds_with_network_denied_and_device_paths_poisoned() {
+    let output = Command::new("/usr/bin/sandbox-exec")
+        .args([
+            "-p",
+            "(version 1)(allow default)(deny network*)",
+            env!("CARGO_BIN_EXE_apppilotkit-rust-foundation-spike"),
+            "manifest",
+        ])
+        .env_clear()
+        .env("HOME", "/nonexistent")
+        .env("PATH", "/nonexistent")
+        .env("APPPILOTKIT_XCRUN", "/nonexistent/xcrun")
+        .env("APPPILOTKIT_ADB", "/nonexistent/adb")
+        .stdin(Stdio::null())
+        .output()
+        .expect("sandboxed manifest process should run");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let parsed: Value = serde_json::from_slice(&output.stdout).expect("manifest should be JSON");
+    assert_complete_manifest(&parsed);
 }
 
 #[test]

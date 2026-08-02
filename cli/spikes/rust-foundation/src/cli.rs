@@ -34,6 +34,17 @@ pub fn command_model() -> Command {
                         .long("summary")
                         .help("Set the UTF-8 result summary")
                         .default_value("spike completed"),
+                )
+                .arg(
+                    Arg::new("outcome")
+                        .long("outcome")
+                        .help("Select a spike-only terminal outcome")
+                        .value_parser(PossibleValuesParser::new([
+                            "succeeded",
+                            "failed",
+                            "cancelled",
+                        ]))
+                        .default_value("succeeded"),
                 ),
         )
         .subcommand(Command::new("manifest").about("Print the offline spike command manifest"))
@@ -61,24 +72,41 @@ where
     let matches = match command_model().try_get_matches_from(arguments) {
         Ok(matches) => matches,
         Err(error) => {
+            let output = newline_terminated(error.to_string().into_bytes());
+            let exit_code = u8::try_from(error.exit_code()).unwrap_or(2);
+            let (stdout, stderr) = if error.use_stderr() {
+                (Vec::new(), output)
+            } else {
+                (output, Vec::new())
+            };
             return CliExecution {
-                stdout: Vec::new(),
-                stderr: newline_terminated(error.to_string().into_bytes()),
-                exit_code: 2,
+                stdout,
+                stderr,
+                exit_code,
             };
         }
     };
 
     match matches.subcommand() {
-        Some(("manifest", _)) => successful_json(&command_manifest()),
+        Some(("manifest", _)) => structured_json(&command_manifest(), 0),
         Some(("emit", matches)) => {
             let summary = matches
                 .get_one::<String>("summary")
                 .expect("clap supplies the summary default")
                 .clone();
+            let (outcome, terminal_type, exit_code) = match matches
+                .get_one::<String>("outcome")
+                .expect("clap supplies the outcome default")
+                .as_str()
+            {
+                "succeeded" => (SpikeOutcome::Succeeded, "run.succeeded", 0),
+                "failed" => (SpikeOutcome::Failed, "run.failed", 1),
+                "cancelled" => (SpikeOutcome::Cancelled, "run.cancelled", 130),
+                _ => unreachable!("clap restricts outcome values"),
+            };
             let result = SpikeResult {
                 schema_version: 1,
-                outcome: SpikeOutcome::Succeeded,
+                outcome,
                 summary,
             };
             match matches
@@ -86,8 +114,8 @@ where
                 .expect("clap supplies the format default")
                 .as_str()
             {
-                "document" => successful_json(&result),
-                "jsonl" => successful_jsonl(&result),
+                "document" => structured_json(&result, exit_code),
+                "jsonl" => structured_jsonl(&result, terminal_type, exit_code),
                 _ => unreachable!("clap restricts format values"),
             }
         }
@@ -95,16 +123,16 @@ where
     }
 }
 
-fn successful_json(value: &impl Serialize) -> CliExecution {
+fn structured_json(value: &impl Serialize, exit_code: u8) -> CliExecution {
     let stdout = serde_json::to_vec(value).expect("spike-owned values serialize");
     CliExecution {
         stdout: newline_terminated(stdout),
         stderr: Vec::new(),
-        exit_code: 0,
+        exit_code,
     }
 }
 
-fn successful_jsonl(result: &SpikeResult) -> CliExecution {
+fn structured_jsonl(result: &SpikeResult, terminal_type: &str, exit_code: u8) -> CliExecution {
     let events = [
         json!({
             "sequence": 0,
@@ -114,7 +142,7 @@ fn successful_jsonl(result: &SpikeResult) -> CliExecution {
         json!({
             "sequence": 1,
             "terminal": true,
-            "type": "run.succeeded",
+            "type": terminal_type,
             "result": result,
         }),
     ];
@@ -126,7 +154,7 @@ fn successful_jsonl(result: &SpikeResult) -> CliExecution {
     CliExecution {
         stdout,
         stderr: Vec::new(),
-        exit_code: 0,
+        exit_code,
     }
 }
 

@@ -18,9 +18,9 @@ The spike is compatible with ADR 0001 and ADR 0002: repository JSON Schema remai
 2. **Spike-owned schema generation — pass.** `schemars = 1.2.2` uses `SchemaSettings::draft2020_12().for_serialize()`. The generated `SpikeResult` schema is meta-validated, validates a serialized result, rejects an invalid outcome, and is structurally compared with a checked-in golden. It never writes `protocol/` schemas.
 3. **Process control — pass within the POSIX boundary.** The Tokio runner starts an owned process group, drains stdout/stderr concurrently with independent limits, sends `SIGTERM`, waits a bounded grace period, sends `SIGKILL` when needed, always awaits the direct child, and verifies the managed PGID disappears. Tests cover output beyond pipe capacity, external cancellation, timeout, a descendant, forced termination, and signal exit. macOS cannot let a process `waitpid` an arbitrary grandchild; therefore “complete reaping” means the direct child is reaped and the managed PGID has no remaining members. A descendant that deliberately escapes the PGID is unsupported by both Rust and Go.
 4. **Local transport and platform seams — pass.** TCP accepts only loopback `SocketAddr` values. TCP and Unix-domain round trips, pending reads, deadlines, and external cancellation are tested. `devicectl --version`, `devicectl help`, `simctl help`, and `adb version` use an injected runner. The real host smoke test passed without a connected device. No production listener or LAN exposure was added.
-5. **Structured output — pass.** The library owns rendering and returns stdout, stderr, and exit code without calling `process::exit`. The executable writes them once. Tests cover strict newline-terminated JSON, UTF-8, JSONL with exactly one terminal event, parse diagnostics isolated on stderr, empty stdout on parse failure, redirected stdin without prompts, recursive duplicate-key rejection, and signal-derived termination status.
+5. **Structured output — pass.** The library owns rendering and returns stdout, stderr, and exit code without calling `process::exit`. The executable writes them once. Tests cover strict newline-terminated JSON, UTF-8, JSONL with exactly one terminal event, parse diagnostics isolated on stderr, empty stdout on parse failure, redirected stdin without prompts, recursive duplicate-key rejection, and binary-level agreement between `succeeded`/`failed`/`cancelled` terminal events and spike-only exit statuses `0`/`1`/`130`. These selectors and exit mappings remain test plumbing rather than the public taxonomy tracked by Issue #13.
 6. **Artifacts — pass.** Data streams to a sibling `NamedTempFile` while SHA-256 and byte count are accumulated. The file is flushed and `sync_all` is called before `persist_noclobber`; on macOS that publication uses the platform's exclusive atomic rename path. Existing and concurrent destinations are not replaced. Cancellation before publication drops the temporary file. Directory sync is attempted after publication and reported in the receipt instead of turning an already-published artifact into a retryable failure.
-7. **Offline command discovery — pass.** Parsing and manifest generation use the same built `clap::Command`. Public commands and arguments are emitted once per command path in stable order. A black-box run succeeded under `env -i`, null stdin, and `sandbox-exec` with network denied. The manifest branch constructs no runtime, runner, credential, or device service.
+7. **Offline command discovery — pass.** Parsing and manifest generation use the same built `clap::Command`. Tests compare the complete public command/argument set, including generated help/version arguments, and reject omissions or duplicates. A black-box test runs with an empty environment, null stdin, poisoned platform-tool paths, and `sandbox-exec` network denial. The manifest branch constructs no runtime, runner, credential, or device service.
 8. **Distribution and burden — partial.** Native arm64 build, ad-hoc signing, runtime metrics, locked dependency metadata, license expressions, and audit pass locally. The workflow uses the standard native `macos-15` arm64 and `macos-15-intel` x86_64 runners. The Intel result is pending.
 
 ## Local arm64 measurements
@@ -39,12 +39,12 @@ Method and results:
 | --- | ---: | --- |
 | Clean release build | 38.73 s real | Fresh temporary `CARGO_TARGET_DIR`; registry/source cache already populated |
 | Thin architecture | arm64 | `lipo -archs` |
-| Unsigned thin binary | 998,368 bytes | `stat -f %z` |
-| Ad-hoc signed thin binary | 1,010,704 bytes | `codesign --sign - --timestamp=none` then `stat` |
-| Signed SHA-256 | `8997f2788b284653c717e92a9a4e1a0cc5d676050555a3059ca9daa7bc2af93e` | `shasum -a 256` |
-| Fresh-copy first invocation | 0.34 s real | First `manifest` execution of the signed copy on this host; not a controlled cold-cache benchmark |
-| 200 warm invocations | 0.51 s real | One unmeasured warm-up, then a shell loop |
-| Mean peak RSS | 1,999,667 bytes | 20 runs under `/usr/bin/time -lp` after warm-up |
+| Unsigned thin binary | 998,992 bytes | `stat -f %z` |
+| Ad-hoc signed thin binary | 1,011,328 bytes | `codesign --sign - --timestamp=none` then `stat` |
+| Signed SHA-256 | `6aec0a924437a9e50d9677bf7ba8645d3c88669f5605379789f2b9aaa3145587` | `shasum -a 256` |
+| Fresh-copy first invocation | 0.14 s real | First `manifest` execution of a fresh copy of the signed artifact on this host; not a controlled cold-cache benchmark |
+| 200 warm invocations | 0.43 s real | One unmeasured warm-up, then a shell loop |
+| Mean peak RSS | 1,993,114 bytes | 20 runs under `/usr/bin/time -lp` after warm-up |
 
 CI reports the two architectures separately because the runner CPU and memory shapes differ. The values must not be compared as a language benchmark.
 
