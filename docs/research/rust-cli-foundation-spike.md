@@ -2,13 +2,13 @@
 
 Date: 2026-08-02
 
-Status: **provisionally passes on arm64; final decision awaits the native x86_64 CI job**
+Status: **passes all eight Issue #16 gates on native arm64 and x86_64 macOS**
 
 This note records the Issue #16 spike. The package and binary are explicitly internal. Their command names, arguments, selectors, output shapes, and result schema are test plumbing and do not decide Issue #13.
 
 ## Decision
 
-Rust currently passes gates 1 through 7 and the local arm64 portion of gate 8. No Go comparison ticket is justified by the evidence so far. The stack decision becomes final only after the checked-in matrix passes on both `aarch64-apple-darwin` and `x86_64-apple-darwin` and the independent Standards and Spec reviews have no P1/P2 findings.
+Rust passes all eight spike gates. The checked-in matrix passed on native `aarch64-apple-darwin` and `x86_64-apple-darwin`, the locked dependency audit reported no vulnerabilities or warnings, and the final independent Standards and Spec reviews reported no P1/P2 findings. The reversal rule therefore does not justify a Go comparison ticket.
 
 The spike is compatible with ADR 0001 and ADR 0002: repository JSON Schema remains the wire source of truth, every current semantic check is preserved, schema resolution is offline, and native iOS/Android UI semantics are not unified or changed by this work.
 
@@ -21,7 +21,7 @@ The spike is compatible with ADR 0001 and ADR 0002: repository JSON Schema remai
 5. **Structured output — pass.** The library owns rendering and returns stdout, stderr, and exit code without calling `process::exit`. The executable writes them once. Tests cover strict newline-terminated JSON, UTF-8, JSONL with exactly one terminal event, parse diagnostics isolated on stderr, empty stdout on parse failure, redirected stdin without prompts, recursive duplicate-key rejection, and binary-level agreement between `succeeded`/`failed`/`cancelled` terminal events and spike-only exit statuses `0`/`1`/`130`. These selectors and exit mappings remain test plumbing rather than the public taxonomy tracked by Issue #13.
 6. **Artifacts — pass.** Data streams to a sibling `NamedTempFile` while SHA-256 and byte count are accumulated. The file is flushed and `sync_all` is called before `persist_noclobber`; on macOS that publication uses the platform's exclusive atomic rename path. Existing and concurrent destinations are not replaced. Cancellation before publication drops the temporary file. Directory sync is attempted after publication and reported in the receipt instead of turning an already-published artifact into a retryable failure.
 7. **Offline command discovery — pass.** Parsing and manifest generation use the same built `clap::Command`. Tests compare the complete public command/argument set, including generated help/version arguments, and reject omissions or duplicates. A black-box test runs with an empty environment, null stdin, poisoned platform-tool paths, and `sandbox-exec` network denial. The manifest branch constructs no runtime, runner, credential, or device service.
-8. **Distribution and burden — partial.** Native arm64 build, ad-hoc signing, runtime metrics, locked dependency metadata, license expressions, and audit pass locally. The workflow uses the standard native `macos-15` arm64 and `macos-15-intel` x86_64 runners. The Intel result is pending.
+8. **Distribution and burden — pass.** GitHub Actions run [30752910893](https://github.com/patrick-fu/AppPilotKit/actions/runs/30752910893) passed on the standard native `macos-15` arm64 and `macos-15-intel` x86_64 runners. Both jobs completed clean release builds, offline Rust verification, native thin-artifact checks, ad-hoc signing, runtime measurements, dependency/license capture, and the 113-test protocol suite. The arm64 job also completed the locked Rust advisory audit.
 
 ## Local arm64 measurements
 
@@ -48,6 +48,22 @@ Method and results:
 
 CI reports the two architectures separately because the runner CPU and memory shapes differ. The values must not be compared as a language benchmark.
 
+## Native CI measurements
+
+Run [30752910893](https://github.com/patrick-fu/AppPilotKit/actions/runs/30752910893) used macOS 15.7.7 (24G720), Rust 1.94.0, image `macos-15-arm64` version `20260727.0256.1`, and image `macos-15` version `20260720.0353.1`. The first-invocation timer has 0.01-second resolution and is not a controlled cold-cache benchmark.
+
+| Measurement | `aarch64-apple-darwin` | `x86_64-apple-darwin` |
+| --- | ---: | ---: |
+| Clean release build | 83.67 s real | 123.28 s real |
+| Unsigned thin binary | 947,936 bytes | 984,864 bytes |
+| Ad-hoc signed thin binary | 966,064 bytes | 1,010,880 bytes |
+| First invocation | 0.00 s real | 0.00 s real |
+| 200 warm invocations | 1.03 s real | 0.76 s real |
+| Mean peak RSS | 1,818,624 bytes | 942,080 bytes |
+| Signed SHA-256 | `50b5470019afd724196f5194cc6284e31faa088342f3c773dd0fb6b036e83de6` | `d8d962ecd98132780676e9ff2dd126f32d156605b0ff696c6505b2b9e7c06582` |
+
+The numbers describe different GitHub runner shapes and are distribution facts, not cross-architecture performance comparisons.
+
 ## Dependencies, licenses, and advisories
 
 Every direct version is exact and `Cargo.lock` is committed. Direct dependencies and reasons:
@@ -66,7 +82,7 @@ Every direct version is exact and `Cargo.lock` is committed. Direct dependencies
 
 The lock contains 142 packages across all target-specific dependency branches. Package metadata reports only permissive/Unicode license expressions: MIT, Apache-2.0, BSD-2-Clause, Zlib, Unlicense, MIT-0, Unicode-3.0, and compatible combinations. The only package without a license field is this private `publish = false` spike package; public licensing is out of scope.
 
-`cargo-audit 0.22.2` against RustSec advisory database commit `308808d74a1462ec8b09c1e76938471c53b55dcc` reported 142 dependencies, 1,178 advisories in the database, zero vulnerabilities, and zero warnings.
+`cargo-audit 0.22.2` against RustSec advisory database commit `308808d74a1462ec8b09c1e76938471c53b55dcc` reported 142 dependencies, 1,178 advisories in the database, zero vulnerabilities, and zero warnings. The arm64 CI artifact recorded the same database commit and result.
 
 ## Reproduction
 
@@ -90,6 +106,6 @@ npm --prefix protocol audit --audit-level=high
 
 The exact native matrix and measurement commands are executable in `.github/workflows/rust-foundation-spike.yml`.
 
-## Remaining decision gate
+## Final conclusion
 
-Do not mark Rust final or close Issue #16 until both native CI jobs pass and the result table is updated with the x86_64 artifact facts. If the Intel job fails because of Rust code, distribution, licenses, or advisories, capture the failure and open the identical Go comparison ticket. Runner availability or account quota is infrastructure evidence, not a Rust reversal by itself.
+Rust passed the complete Issue #16 matrix without triggering a reversal condition. Both native architectures built, tested, signed, and ran successfully; offline schema parity, descendant cleanup within the documented POSIX boundary, locked dependency burden, licenses, and advisories passed; and the final Standards and Spec reviews had no remaining P1/P2 findings. Issue #16 can close without a Go comparison ticket, and the production desktop CLI may proceed with Rust subject to a separate ADR.
