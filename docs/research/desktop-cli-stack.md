@@ -115,18 +115,18 @@ This table is **inference**, based on the facts above. “Strong”, “adequate
 
 Host: arm64 macOS 26.6. Installed tools were Swift 6.2.3, Rust 1.94.0, Node 25.6.1/npm 11.9.0, Xcode `devicectl` 506.6, and ADB 36.0.2. `go` was absent.
 
-The checked-in [probe script](desktop-cli-stack-probe.sh) recreates the sources under a new system temporary directory. Each probe implements one generated-help command and one single-document JSON command. Run it from the repository root with `sh docs/research/desktop-cli-stack-probe.sh`. These are **framework-only lower bounds**, not production-stack benchmarks.
+The checked-in [probe script](desktop-cli-stack-probe.sh) recreates the sources under a new ignored directory in `artifacts/`. Each probe implements one generated-help command and one single-document JSON command. Run it from the repository root with `sh docs/research/desktop-cli-stack-probe.sh`. These are **framework-only lower bounds**, not production-stack benchmarks.
 
 | Probe | Result |
 | --- | --- |
-| Swift Argument Parser 1.8.2 release build | 1,644,168–1,647,576-byte arm64 Mach-O; 20-run mean peak RSS 6,884,557–6,915,686 bytes; 200 warm invocations in 0.64–0.72 s |
-| Rust clap 4.6.5 + serde/serde_json release build | 942,976-byte arm64 Mach-O; 28 resolved dependency packages; 20-run mean peak RSS 1,933,312 bytes; 200 warm invocations in 0.30–0.34 s |
-| Node + Commander 15.0.0 + Ajv 8.20.0 | 2,968 KiB `node_modules`, 6 resolved npm packages; 20-run mean peak RSS 51,917,619–52,035,584 bytes; 200 warm invocations in 11.19–11.50 s |
+| Swift Argument Parser 1.8.2 release build | About 1.65 MB arm64 Mach-O; 20-run mean peak RSS about 6.9 MB; 200 warm invocations in 0.6–0.8 s |
+| Rust clap 4.6.5 + serde/serde_json release build | About 0.94 MB arm64 Mach-O; 28 resolved dependency packages; 20-run mean peak RSS about 1.9 MB; 200 warm invocations in 0.3–0.4 s |
+| Node + Commander 15.0.0 + Ajv 8.20.0 | 2,968 KiB `node_modules`, 6 resolved npm packages; 20-run mean peak RSS about 52 MB; 200 warm invocations in 11.1–11.6 s |
 | Go | Not run: toolchain unavailable |
 
 The Node size excludes the Node runtime itself. `otool -L` showed that the Swift probe dynamically used macOS Foundation and Swift runtime libraries, while the Rust probe used only `libSystem`. All three executable probes generated command/subcommand help, wrote one newline-terminated JSON object to stdout, and passed `jq -e .`. The npm lockfile audit reported zero known vulnerabilities across the six resolved packages; that result is not comparable to Rust or Swift because their graphs were not audited in this probe.
 
-The ranges combine the initial research run and a clean rerun of the checked-in script on the same host; they demonstrate normal build and scheduling variation. The script pins every direct package version used by the recorded run, creates lock files, and records the exact program sources and commands. Each probe has one `emit --value <string>` subcommand and emits `{"status":"<string>"}`. Binary size comes from `stat -f %z`, the Node dependency footprint from `du -sk node_modules`, and resolved package counts from `Cargo.lock` and `package-lock.json`, excluding each probe root.
+The rounded results combine the initial research run and repeated clean runs of the checked-in script on the same host; they acknowledge normal build and scheduling variation. The script pins every direct package version used by the recorded run, creates lock files, and records the exact program sources and commands. Each probe has one `emit --value <string>` subcommand and emits `{"status":"<string>"}`. Binary size comes from `stat -f %z`, the Node dependency footprint from `du -sk node_modules`, and resolved package counts from `Cargo.lock` and `package-lock.json`, excluding each probe root.
 
 For peak RSS, each already-built command received one unmeasured warm-up invocation, then 20 invocations under macOS `/usr/bin/time -lp`; the reported value is the arithmetic mean of its `maximum resident set size` field. The 200-invocation result used this exact loop shape for each command:
 

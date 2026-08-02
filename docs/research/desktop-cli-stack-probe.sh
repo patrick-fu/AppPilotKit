@@ -2,14 +2,17 @@
 
 set -eu
 
-for probe_tool in swift cargo rustc node npm jq awk; do
+for probe_tool in swift cargo rustc node npm jq awk git otool; do
   if ! command -v "$probe_tool" >/dev/null 2>&1; then
     printf 'missing required tool: %s\n' "$probe_tool" >&2
     exit 1
   fi
 done
 
-probe_root=$(mktemp -d "${TMPDIR:-/tmp}/apppilotkit-cli-stack.XXXXXX")
+script_dir=$(CDPATH='' cd -- "$(dirname "$0")" && pwd)
+repo_root=$(git -C "$script_dir" rev-parse --show-toplevel)
+mkdir -p "$repo_root/artifacts"
+probe_root=$(mktemp -d "$repo_root/artifacts/desktop-cli-stack.XXXXXX")
 swift_root="$probe_root/swift"
 rust_root="$probe_root/rust"
 node_root="$probe_root/node"
@@ -150,18 +153,25 @@ cargo build --manifest-path "$rust_root/Cargo.toml" --release --locked
   cd "$node_root"
   npm install --package-lock-only --ignore-scripts --no-audit --no-fund
   npm ci --ignore-scripts --no-audit --no-fund
+  npm audit --audit-level=high
 )
 
 swift_probe="$swift_root/.build/release/Probe"
 rust_probe="$rust_root/target/release/probe"
 
-"$swift_probe" --help | grep -q emit
-"$rust_probe" --help | grep -q emit
-node "$node_root/probe.js" --help | grep -q emit
+swift_help=$("$swift_probe" --help)
+rust_help=$("$rust_probe" --help)
+node_help=$(node "$node_root/probe.js" --help)
+printf '%s\n' "$swift_help" | grep -q emit
+printf '%s\n' "$rust_help" | grep -q emit
+printf '%s\n' "$node_help" | grep -q emit
 
-"$swift_probe" emit --value ok | jq -e '.status == "ok"' >/dev/null
-"$rust_probe" emit --value ok | jq -e '.status == "ok"' >/dev/null
-node "$node_root/probe.js" emit --value ok | jq -e '.status == "ok"' >/dev/null
+swift_json=$("$swift_probe" emit --value ok)
+rust_json=$("$rust_probe" emit --value ok)
+node_json=$(node "$node_root/probe.js" emit --value ok)
+printf '%s\n' "$swift_json" | jq -e '.status == "ok"' >/dev/null
+printf '%s\n' "$rust_json" | jq -e '.status == "ok"' >/dev/null
+printf '%s\n' "$node_json" | jq -e '.status == "ok"' >/dev/null
 
 printf 'swift_binary_bytes=%s\n' "$(stat -f %z "$swift_probe")"
 printf 'rust_binary_bytes=%s\n' "$(stat -f %z "$rust_probe")"
@@ -171,20 +181,25 @@ printf 'rust_resolved_dependencies=%s\n' "$(awk '
 ' "$rust_root/Cargo.lock")"
 printf 'node_modules_kib=%s\n' "$(du -sk "$node_root/node_modules" | awk '{print $1}')"
 printf 'node_resolved_packages=%s\n' "$(jq '.packages | length - 1' "$node_root/package-lock.json")"
+printf 'swift_linkage\n'
+otool -L "$swift_probe"
+printf 'rust_linkage\n'
+otool -L "$rust_probe"
 
 bench_rss() {
   probe_label="$1"
   shift
   "$@" >/dev/null
+  measurement_file="$probe_root/$probe_label-rss.txt"
+  : >"$measurement_file"
 
-  {
-    probe_i=0
-    while [ "$probe_i" -lt 20 ]; do
-      /usr/bin/time -lp "$@" >/dev/null
-      probe_i=$((probe_i + 1))
-    done
-  } 2>&1 |
-    awk -v label="$probe_label" '
+  probe_i=0
+  while [ "$probe_i" -lt 20 ]; do
+    /usr/bin/time -lp "$@" >/dev/null 2>>"$measurement_file"
+    probe_i=$((probe_i + 1))
+  done
+
+  awk -v label="$probe_label" '
       $1 == "real" {
         time_sum += $2
         time_count++
@@ -200,7 +215,7 @@ bench_rss() {
           time_sum / time_count,
           rss_sum / rss_count
       }
-    '
+    ' "$measurement_file"
 }
 
 bench_200() {
@@ -209,7 +224,7 @@ bench_200() {
   printf '%s_200_invocations\n' "$probe_label"
   # The inner shell receives the command as positional arguments.
   # shellcheck disable=SC2016
-  /usr/bin/time -p sh -c '
+  /usr/bin/time -p sh -eu -c '
     probe_i=0
     while [ "$probe_i" -lt 200 ]; do
       "$@" >/dev/null
