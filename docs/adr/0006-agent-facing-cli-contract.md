@@ -1,4 +1,4 @@
-# ADR 0005: Agent-facing CLI contract
+# ADR 0006: Agent-facing CLI contract
 
 - Status: Accepted
 - Date: 2026-08-02
