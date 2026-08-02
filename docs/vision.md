@@ -73,7 +73,7 @@ Cross-platform commands may normalize common fields, but raw platform details re
 
 ## Not decided yet
 
-- CLI implementation language and command name.
+- CLI executable name.
 - Package coordinates and public license.
 - MCP and Agent Skill adapters; SDK and CLI come first.
 - Optional compatibility adapters for Lookin, Appium, or other ecosystems.
