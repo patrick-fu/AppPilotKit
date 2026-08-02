@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/error.schema.json",
+  "title": "AppPilotKit CLI v1 structured error",
+  "type": "object",
+  "required": ["kind", "message", "retryable", "details"],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]*(?:\\.[a-z][A-Za-z0-9]*)*$",
+      "maxLength": 128
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "details": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

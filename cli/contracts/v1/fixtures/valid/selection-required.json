@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "failed",
+  "command": ["doctor"], "side_effect": "read_only", "retry_safety": "safe",
+  "error": {"kind": "target.selectionRequired", "message": "Select one target", "retryable": true, "details": {"candidate_count": 2}},
+  "disclosure": {"truncated": false, "returned_items": 2}, "artifacts": [], "next_actions": []
+}

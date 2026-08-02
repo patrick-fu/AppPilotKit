@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+  "title": "AppPilotKit CLI v1 Machine Result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "cli_version",
+    "status",
+    "command",
+    "side_effect",
+    "retry_safety",
+    "disclosure",
+    "artifacts",
+    "next_actions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "cli_version": {
+      "$ref": "#/$defs/semver"
+    },
+    "status": {
+      "$ref": "#/$defs/status"
+    },
+    "command": {
+      "$ref": "#/$defs/commandPath"
+    },
+    "side_effect": {
+      "$ref": "#/$defs/sideEffect"
+    },
+    "retry_safety": {
+      "$ref": "#/$defs/retrySafety"
+    },
+    "data": {
+      "type": "object"
+    },
+    "error": {
+      "$ref": "https://apppilotkit.dev/cli/v1/error.schema.json"
+    },
+    "disclosure": {
+      "$ref": "https://apppilotkit.dev/cli/v1/disclosure.schema.json"
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "https://apppilotkit.dev/cli/v1/artifact.schema.json"
+      }
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "https://apppilotkit.dev/cli/v1/next-action.schema.json"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["data"],
+        "properties": {
+          "error": false
+        }
+      },
+      "else": {
+        "required": ["error"],
+        "properties": {
+          "data": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "error": {
+            "properties": {
+              "kind": {
+                "const": "action.outcomeUnknown"
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["error"]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          },
+          "side_effect": {
+            "enum": ["app_mutation", "device_mutation"]
+          },
+          "retry_safety": {
+            "const": "unsafe_after_ambiguous_result"
+          },
+          "error": {
+            "properties": {
+              "retryable": {
+                "const": false
+              }
+            },
+            "required": ["retryable"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "properties": {
+              "kind": {
+                "const": "run.cancelled"
+              }
+            },
+            "required": ["kind"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          },
+          "error": {
+            "properties": {
+              "retryable": {
+                "const": true
+              }
+            },
+            "required": ["retryable"]
+          }
+        },
+        "required": ["status", "error"]
+      },
+      "then": {
+        "properties": {
+          "retry_safety": {
+            "const": "safe"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "error": {
+            "properties": {
+              "kind": {
+                "const": "run.cancelled"
+              }
+            },
+            "required": ["kind"]
+          }
+        },
+        "required": ["error"]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+      "maxLength": 128
+    },
+    "status": {
+      "enum": ["succeeded", "failed", "cancelled"]
+    },
+    "commandPath": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*$",
+        "maxLength": 64
+      }
+    },
+    "sideEffect": {
+      "enum": ["read_only", "local_write", "app_mutation", "device_mutation"]
+    },
+    "retrySafety": {
+      "enum": [
+        "safe",
+        "requires_idempotency_key",
+        "requires_artifact_conflict_policy",
+        "unsafe_after_ambiguous_result"
+      ]
+    }
+  }
+}

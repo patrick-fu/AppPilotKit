@@ -1,0 +1,245 @@
+{
+  "cases": [
+    {
+      "name": "read-only success with complete disclosure and Next Action",
+      "fixture": "valid/success-read-only.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {
+        "status": "succeeded",
+        "output_mode": ["human", "json"],
+        "exit_code": 0,
+        "side_effect": "read_only",
+        "retry_safety": "safe",
+        "shape": ["disclosure_complete", "next_action"]
+      }
+    },
+    {
+      "name": "internal failure",
+      "fixture": "valid/internal-error.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"status": "failed", "exit_code": 1, "shape": "error"}
+    },
+    {
+      "name": "invalid invocation",
+      "fixture": "valid/invalid-invocation.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"exit_code": 2}
+    },
+    {
+      "name": "authentication required",
+      "fixture": "valid/authentication-required.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"exit_code": 3}
+    },
+    {
+      "name": "target selection required",
+      "fixture": "valid/selection-required.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"exit_code": 4}
+    },
+    {
+      "name": "tap outcome unknown",
+      "fixture": "valid/outcome-unknown-tap.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {
+        "exit_code": 5,
+        "side_effect": "app_mutation",
+        "retry_safety": "unsafe_after_ambiguous_result"
+      }
+    },
+    {
+      "name": "swipe outcome unknown",
+      "fixture": "valid/outcome-unknown-swipe.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true
+    },
+    {
+      "name": "type outcome unknown",
+      "fixture": "valid/outcome-unknown-type.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true
+    },
+    {
+      "name": "incompatible protocol",
+      "fixture": "valid/incompatible-protocol.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"exit_code": 6}
+    },
+    {
+      "name": "artifact conflict",
+      "fixture": "valid/artifact-exists.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {
+        "exit_code": 7,
+        "side_effect": "local_write",
+        "retry_safety": "requires_artifact_conflict_policy",
+        "shape": "artifact"
+      }
+    },
+    {
+      "name": "proven cancellation",
+      "fixture": "valid/cancelled.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"status": "cancelled", "exit_code": 130}
+    },
+    {
+      "name": "idempotent device mutation",
+      "fixture": "valid/device-mutation.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {
+        "side_effect": "device_mutation",
+        "retry_safety": "requires_idempotency_key"
+      }
+    },
+    {
+      "name": "truncated disclosure without frozen continuation argv",
+      "fixture": "valid/truncated-disclosure.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": true,
+      "coverage": {"shape": "disclosure_truncated"}
+    },
+    {
+      "name": "JSONL started event",
+      "fixture": "valid/jsonl-started.json",
+      "schema": "https://apppilotkit.dev/cli/v1/jsonl-event.schema.json",
+      "valid": true,
+      "coverage": {"output_mode": "jsonl"}
+    },
+    {
+      "name": "JSONL terminal event",
+      "fixture": "valid/jsonl-terminal.json",
+      "schema": "https://apppilotkit.dev/cli/v1/jsonl-event.schema.json",
+      "valid": true
+    },
+    {
+      "name": "success cannot contain error",
+      "fixture": "invalid/data-and-error.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "failure cannot contain data",
+      "fixture": "invalid/failure-with-data.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "schema version is a string",
+      "fixture": "invalid/integer-schema-version.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "side effect is closed",
+      "fixture": "invalid/unknown-side-effect.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "retry safety is closed",
+      "fixture": "invalid/unknown-retry-safety.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "artifact path is absolute",
+      "fixture": "invalid/artifact-relative-path.json",
+      "schema": "https://apppilotkit.dev/cli/v1/artifact.schema.json",
+      "valid": false
+    },
+    {
+      "name": "artifact digest is SHA-256 hex",
+      "fixture": "invalid/artifact-bad-digest.json",
+      "schema": "https://apppilotkit.dev/cli/v1/artifact.schema.json",
+      "valid": false
+    },
+    {
+      "name": "artifact size is non-negative",
+      "fixture": "invalid/artifact-negative-size.json",
+      "schema": "https://apppilotkit.dev/cli/v1/artifact.schema.json",
+      "valid": false
+    },
+    {
+      "name": "artifact sensitivity is required",
+      "fixture": "invalid/artifact-missing-sensitive.json",
+      "schema": "https://apppilotkit.dev/cli/v1/artifact.schema.json",
+      "valid": false
+    },
+    {
+      "name": "structured error details are required",
+      "fixture": "invalid/error-missing-details.json",
+      "schema": "https://apppilotkit.dev/cli/v1/error.schema.json",
+      "valid": false
+    },
+    {
+      "name": "truncation requires a cursor",
+      "fixture": "invalid/truncated-missing-cursor.json",
+      "schema": "https://apppilotkit.dev/cli/v1/disclosure.schema.json",
+      "valid": false
+    },
+    {
+      "name": "complete disclosure has no cursor",
+      "fixture": "invalid/complete-with-cursor.json",
+      "schema": "https://apppilotkit.dev/cli/v1/disclosure.schema.json",
+      "valid": false
+    },
+    {
+      "name": "Next Action includes reason",
+      "fixture": "invalid/next-action-missing-reason.json",
+      "schema": "https://apppilotkit.dev/cli/v1/next-action.schema.json",
+      "valid": false
+    },
+    {
+      "name": "Next Action argv is not empty",
+      "fixture": "invalid/next-action-empty-argv.json",
+      "schema": "https://apppilotkit.dev/cli/v1/next-action.schema.json",
+      "valid": false
+    },
+    {
+      "name": "Machine Result is strict",
+      "fixture": "invalid/extra-property.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "terminal event agrees with result",
+      "fixture": "invalid/jsonl-terminal-mismatch.json",
+      "schema": "https://apppilotkit.dev/cli/v1/jsonl-event.schema.json",
+      "valid": false
+    },
+    {
+      "name": "doctor status is closed",
+      "fixture": "invalid/doctor-status.json",
+      "schema": "https://apppilotkit.dev/cli/v1/discovery.schema.json#/$defs/doctorReport",
+      "valid": false
+    },
+    {
+      "name": "unknown mutation outcome is not retryable",
+      "fixture": "invalid/outcome-unknown-retryable.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "unsafe cancellation is not retryable",
+      "fixture": "invalid/cancelled-unsafe-retryable.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    },
+    {
+      "name": "run.cancelled requires cancelled status",
+      "fixture": "invalid/failed-run-cancelled.json",
+      "schema": "https://apppilotkit.dev/cli/v1/machine-result.schema.json",
+      "valid": false
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "type": "run.started", "schema_version": "1.0", "cli_version": "0.1.0", "run_id": "run-fixture-1",
+  "command": ["capabilities"], "side_effect": "read_only", "retry_safety": "safe"
+}

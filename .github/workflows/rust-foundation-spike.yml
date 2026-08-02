@@ -1,4 +1,4 @@
-name: Rust foundation spike
+name: Rust CLI native verification
 
 on:
   pull_request:
@@ -29,6 +29,8 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       SPIKE_PACKAGE: apppilotkit-rust-foundation-spike
       SPIKE_BINARY: apppilotkit-rust-foundation-spike
+      CONTRACT_PACKAGE: apppilotkit-cli-contract
+      CONTRACT_TEST_BINARY: apppilotkit-cli-contract-fixture
 
     steps:
       - uses: actions/checkout@v6
@@ -51,6 +53,15 @@ jobs:
             --release --locked --package "$SPIKE_PACKAGE" \
             --bin "$SPIKE_BINARY" --target "${{ matrix.target }}" \
             2>"../artifacts/rust-foundation-${{ matrix.target }}/clean-build.time"
+
+      - name: Build production contract core and black-box host
+        working-directory: cli
+        run: |
+          cargo +1.94.0 build --release --locked \
+            --package "$CONTRACT_PACKAGE" --lib --target "${{ matrix.target }}"
+          cargo +1.94.0 build --release --locked \
+            --package "$CONTRACT_PACKAGE" --bin "$CONTRACT_TEST_BINARY" \
+            --target "${{ matrix.target }}"
 
       - name: Verify formatting, lints, and tests offline
         working-directory: cli

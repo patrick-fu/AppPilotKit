@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/capability-manifest.schema.json",
+  "title": "AppPilotKit CLI v1 capability manifest",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "cli_version",
+    "executable",
+    "output_modes",
+    "global_arguments",
+    "commands",
+    "schemas",
+    "side_effect_classes",
+    "retry_safety_values",
+    "error_kinds"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "cli_version": {
+      "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/semver"
+    },
+    "executable": {
+      "$ref": "#/$defs/executable"
+    },
+    "output_modes": {
+      "type": "array",
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "const": "human"
+        },
+        {
+          "const": "json"
+        },
+        {
+          "const": "jsonl"
+        }
+      ],
+      "items": false
+    },
+    "global_arguments": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/argument"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "schemas": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "side_effect_classes": {
+      "type": "array",
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "const": "app_mutation"
+        },
+        {
+          "const": "device_mutation"
+        },
+        {
+          "const": "local_write"
+        },
+        {
+          "const": "read_only"
+        }
+      ],
+      "items": false
+    },
+    "retry_safety_values": {
+      "type": "array",
+      "minItems": 4,
+      "prefixItems": [
+        {
+          "const": "requires_artifact_conflict_policy"
+        },
+        {
+          "const": "requires_idempotency_key"
+        },
+        {
+          "const": "safe"
+        },
+        {
+          "const": "unsafe_after_ambiguous_result"
+        }
+      ],
+      "items": false
+    },
+    "error_kinds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/errorKind"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "executable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "argument": {
+      "type": "object",
+      "required": ["id", "long", "short", "aliases", "value_name", "values", "required", "help"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "long": {
+          "type": ["string", "null"]
+        },
+        "short": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 1
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "value_name": {
+          "type": ["string", "null"]
+        },
+        "values": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "help": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "required": ["path", "aliases", "about", "arguments", "result_schema_id", "result_fields", "error_kinds", "side_effect", "retry_safety"],
+      "properties": {
+        "path": {
+          "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/commandPath"
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "about": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/argument"
+          }
+        },
+        "result_schema_id": {
+          "type": ["string", "null"]
+        },
+        "result_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "error_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "side_effect": {
+          "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/sideEffect"
+        },
+        "retry_safety": {
+          "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/retrySafety"
+        }
+      },
+      "additionalProperties": false
+    },
+    "errorKind": {
+      "type": "object",
+      "required": ["kind", "exit_code"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exit_code": {
+          "enum": [1, 2, 3, 4, 5, 6, 7, 130]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

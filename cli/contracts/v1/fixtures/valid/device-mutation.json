@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "succeeded",
+  "command": ["action", "install"], "side_effect": "device_mutation", "retry_safety": "requires_idempotency_key",
+  "data": {"installed": true},
+  "disclosure": {"truncated": false, "returned_items": 1}, "artifacts": [], "next_actions": []
+}

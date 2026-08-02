@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "failed",
+  "command": ["action", "tap"], "side_effect": "app_mutation", "retry_safety": "unsafe_after_ambiguous_result",
+  "error": {"kind": "action.outcomeUnknown", "message": "The mutation may have executed; do not replay it.", "retryable": false, "details": {"operation": "tap"}},
+  "disclosure": {"truncated": false, "returned_items": 0}, "artifacts": [], "next_actions": []
+}
