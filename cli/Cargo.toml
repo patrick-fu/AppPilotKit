@@ -1,0 +1,3 @@
+[workspace]
+members = ["spikes/rust-foundation"]
+resolver = "3"
