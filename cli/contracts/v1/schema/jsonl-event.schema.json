@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/jsonl-event.schema.json",
+  "title": "AppPilotKit CLI v1 JSONL event",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/started"
+    },
+    {
+      "$ref": "#/$defs/succeeded"
+    },
+    {
+      "$ref": "#/$defs/failed"
+    },
+    {
+      "$ref": "#/$defs/cancelled"
+    }
+  ],
+  "$defs": {
+    "runId": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9._~-]{1,128}$"
+    },
+    "common": {
+      "type": "object",
+      "required": ["type", "schema_version", "cli_version", "run_id"],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "cli_version": {
+          "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/semver"
+        },
+        "run_id": {
+          "$ref": "#/$defs/runId"
+        }
+      }
+    },
+    "started": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        },
+        {
+          "type": "object",
+          "required": ["command", "side_effect", "retry_safety"],
+          "properties": {
+            "type": {
+              "const": "run.started"
+            },
+            "command": {
+              "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/commandPath"
+            },
+            "side_effect": {
+              "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/sideEffect"
+            },
+            "retry_safety": {
+              "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json#/$defs/retrySafety"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "terminal": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/common"
+        },
+        {
+          "type": "object",
+          "required": ["result"],
+          "properties": {
+            "result": {
+              "$ref": "https://apppilotkit.dev/cli/v1/machine-result.schema.json"
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "succeeded": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/terminal"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run.succeeded"
+            },
+            "result": {
+              "properties": {
+                "status": {
+                  "const": "succeeded"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "failed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/terminal"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run.failed"
+            },
+            "result": {
+              "properties": {
+                "status": {
+                  "const": "failed"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "cancelled": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/terminal"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "run.cancelled"
+            },
+            "result": {
+              "properties": {
+                "status": {
+                  "const": "cancelled"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

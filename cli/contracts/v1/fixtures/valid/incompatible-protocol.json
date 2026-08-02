@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "failed",
+  "command": ["doctor"], "side_effect": "read_only", "retry_safety": "safe",
+  "error": {"kind": "incompatibleProtocol", "message": "No compatible protocol version", "retryable": false, "details": {"peer": "2.0"}},
+  "disclosure": {"truncated": false, "returned_items": 0}, "artifacts": [], "next_actions": []
+}

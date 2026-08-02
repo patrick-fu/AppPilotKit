@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "cancelled",
+  "command": ["doctor"], "side_effect": "read_only", "retry_safety": "safe",
+  "error": {"kind": "run.cancelled", "message": "The operation was definitively cancelled", "retryable": true, "details": {"cleanup": "completed"}},
+  "disclosure": {"truncated": false, "returned_items": 0}, "artifacts": [], "next_actions": []
+}

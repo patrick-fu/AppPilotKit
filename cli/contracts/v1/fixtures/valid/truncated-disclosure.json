@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "succeeded",
+  "command": ["capabilities"], "side_effect": "read_only", "retry_safety": "safe",
+  "data": {"items": []},
+  "disclosure": {
+    "truncated": true, "returned_items": 0,
+    "applied_limits": {"max_items": 100}, "reasons": ["max_items"], "next_cursor": "cursor_opaque-1"
+  },
+  "artifacts": [], "next_actions": []
+}

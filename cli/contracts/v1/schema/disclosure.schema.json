@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/disclosure.schema.json",
+  "title": "AppPilotKit CLI v1 bounded disclosure",
+  "type": "object",
+  "required": ["truncated", "returned_items"],
+  "properties": {
+    "truncated": {
+      "type": "boolean"
+    },
+    "returned_items": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "applied_limits": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 67108864
+        }
+      },
+      "additionalProperties": false
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["max_items", "max_bytes", "provider_deadline", "provider_limit"]
+      }
+    },
+    "next_cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "truncated": {
+            "const": true
+          }
+        },
+        "required": ["truncated"]
+      },
+      "then": {
+        "required": ["reasons", "next_cursor"]
+      },
+      "else": {
+        "properties": {
+          "reasons": false,
+          "next_cursor": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "failed",
+  "command": ["doctor"], "side_effect": "read_only", "retry_safety": "safe",
+  "error": {"kind": "transport.authenticationRequired", "message": "Authentication is required", "retryable": true, "details": {"scheme": "pairing"}},
+  "disclosure": {"truncated": false, "returned_items": 0}, "artifacts": [], "next_actions": []
+}

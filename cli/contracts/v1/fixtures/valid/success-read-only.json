@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "cli_version": "0.1.0",
+  "status": "succeeded",
+  "command": ["capabilities"],
+  "side_effect": "read_only",
+  "retry_safety": "safe",
+  "data": {"installed": true},
+  "disclosure": {"truncated": false, "returned_items": 1},
+  "artifacts": [],
+  "next_actions": [{
+    "id": "schema.list",
+    "argv": ["fixture-cli", "schema", "list", "--output", "json"],
+    "side_effect": "read_only",
+    "retry_safety": "safe",
+    "preconditions": [],
+    "reason": "Discover every installed machine schema"
+  }]
+}

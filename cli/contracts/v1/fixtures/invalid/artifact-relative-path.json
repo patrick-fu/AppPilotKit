@@ -1,0 +1,5 @@
+{
+  "id": "artifact_bad", "kind": "schema", "path": "relative/schema.json", "media_type": "application/json",
+  "size_bytes": 1, "digest": {"algorithm": "sha-256", "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+  "sensitive": false
+}

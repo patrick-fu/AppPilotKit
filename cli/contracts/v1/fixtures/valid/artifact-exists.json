@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "failed",
+  "command": ["schema", "show"], "side_effect": "local_write", "retry_safety": "requires_artifact_conflict_policy",
+  "error": {"kind": "artifact.alreadyExists", "message": "The destination already exists", "retryable": true, "details": {"path": "/tmp/apppilotkit/schema.json"}},
+  "disclosure": {"truncated": false, "returned_items": 0},
+  "artifacts": [{
+    "id": "artifact_schema-1", "kind": "schema", "path": "/tmp/apppilotkit/schema.json",
+    "media_type": "application/json", "size_bytes": 128,
+    "digest": {"algorithm": "sha-256", "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"},
+    "sensitive": false
+  }],
+  "next_actions": []
+}

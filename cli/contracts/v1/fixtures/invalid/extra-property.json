@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0", "cli_version": "0.1.0", "status": "succeeded", "command": [],
+  "side_effect": "read_only", "retry_safety": "safe", "data": {},
+  "disclosure": {"truncated": false, "returned_items": 0}, "artifacts": [], "next_actions": [],
+  "debug": true
+}

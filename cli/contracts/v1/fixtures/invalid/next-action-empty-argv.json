@@ -1,0 +1,4 @@
+{
+  "id": "schema.list", "argv": [], "side_effect": "read_only", "retry_safety": "safe",
+  "preconditions": [], "reason": "Discover schemas"
+}

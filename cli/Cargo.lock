@@ -38,6 +38,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
+name = "apppilotkit-cli-contract"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "jsonschema",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "apppilotkit-rust-foundation-spike"
 version = "0.0.0"
 dependencies = [
