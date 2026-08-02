@@ -106,6 +106,7 @@ jobs:
         run: |
           npm --prefix protocol ci
           npm --prefix protocol test
+          npm --prefix protocol audit --audit-level=high
 
       - name: Audit locked Rust dependencies
         if: matrix.target == 'aarch64-apple-darwin'
