@@ -44,6 +44,30 @@ _Avoid_: maxSdkVersion, Host-controlled target SDK
 The complete ADR 0002 inspection contract: compact and explicitly full hierarchies, stable-reference and indexed queries, bounded ancestor and sibling context, provider-native fields, explicit limits and truncation, and cursor pagination.
 _Avoid_: Hierarchy dump, compact-only inspection
 
+**Acceptance Host**:
+A repository-owned iOS or Android Opted-in App that exposes deterministic Demo Scenarios through public AppPilotKit surfaces for MVP acceptance.
+_Avoid_: Sample app, test harness
+
+**Demo Scenario Contract**:
+The versioned cross-platform catalog of Demo Scenario identities, logical states, fixed fixtures, provider obligations, and observable evidence. Its revision is independent of protocol and CLI contract versions.
+_Avoid_: Demo API, test plan
+
+**Demo Scenario**:
+A Target-local, independently resettable logical state machine with a shared cross-platform identity and declared native differences. Its result is judged from public evidence rather than private App state.
+_Avoid_: Screen, test case
+
+**Scenario Seed**:
+The deterministic initial state restored for one Demo Scenario by cold launch or reset without affecting another Target.
+_Avoid_: Fixture setup, persisted app data
+
+**Acceptance Journey**:
+A deterministic sequence over one or more Demo Scenarios and Targets whose outcome is established only by public SDK, Protocol, and CLI evidence.
+_Avoid_: Scripted workflow, end-to-end test
+
+**Fixture Canary**:
+A stable synthetic value assigned to one disclosure category so its permitted presence or forbidden leakage can be verified across results and Artifacts.
+_Avoid_: Test credential, real secret
+
 **Image Evidence**:
 An original App Surface screenshot or a separately generated crop or annotation derived on the Host. Every original and derived image is a distinct sensitive Artifact; annotation never mutates the original.
 _Avoid_: Inline screenshot payload, modified original
