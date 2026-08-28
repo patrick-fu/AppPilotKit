@@ -75,6 +75,6 @@ Cross-platform commands may normalize common fields, but raw platform details re
 
 ## Not decided yet
 
-- Package coordinates and public license.
+- Package coordinates.
 - MCP and Agent Skill adapters; SDK and CLI come first.
 - Optional compatibility adapters for Lookin, Appium, or other ecosystems.

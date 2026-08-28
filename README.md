@@ -10,7 +10,7 @@ It will combine an app-embedded debug SDK with a desktop CLI so coding agents ca
 - receive stable, compact JSON designed for progressive disclosure;
 - work with simulators, emulators, and physical devices.
 
-The project is in private incubation. Its public license, package names, CLI command name, and implementation languages are intentionally undecided.
+The project is in early development. Package coordinates and the final CLI command name remain under active development.
 
 ## Repository layout
 
@@ -21,3 +21,7 @@ The project is in private incubation. Its public license, package names, CLI com
 - `docs/` — product constraints, architecture decisions, and agent configuration.
 
 Read [docs/vision.md](docs/vision.md) before proposing implementation work.
+
+## License
+
+AppPilotKit is available under the [MIT License](LICENSE).

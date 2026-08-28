@@ -1,6 +1,7 @@
 {
   "name": "@apppilotkit/protocol-contracts",
   "version": "0.0.0",
+  "license": "MIT",
   "private": true,
   "description": "Executable AppPilotKit wire-contract fixtures",
   "scripts": {
