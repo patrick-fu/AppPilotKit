@@ -20,6 +20,26 @@ _Avoid_: Device, app, endpoint
 A Target whose App Surface is active and eligible for guaranteed inspection and actions. Backgrounding invalidates its interactive Protocol Sessions until it is reactivated and reconnected.
 _Avoid_: Connected process, background automation target
 
+**Host-local Session Broker**:
+An on-demand, current-user-only Host component that coordinates selected Targets and keeps its routing and bootstrap state only in memory.
+_Avoid_: Server, daemon, remote service
+
+**Target Lease**:
+A bounded-lifetime Broker record for one selected Target process and Listener Epoch, including the Host resources that must be cleaned for that relationship.
+_Avoid_: Device identity, Protocol Session, credential
+
+**Bootstrap Public Material**:
+One-time non-secret data that binds a selected Target process to its bootstrap exchange and may safely cross platform launch metadata.
+_Avoid_: Bootstrap token, Session Credential
+
+**Process Bootstrap Secret**:
+A process-generation-scoped Session Credential used only for pre-protocol bootstrap and delivered through the selected protected memory stream. It may authorize independently keyed Protocol Sessions but is never reused as a Protocol Session key or action credential.
+_Avoid_: Environment token, saved credential
+
+**Listener Epoch**:
+The current eligible incarnation of a Target listener. Losing foreground eligibility invalidates the epoch and its interactive sessions without implying a new process generation.
+_Avoid_: Process generation, Protocol Session
+
 **App Surface**:
 UI owned by a Target. The MVP guarantees inspection, stable references, screenshots, and supported actions only within this boundary. The system keyboard may participate as an input mechanism.
 _Avoid_: Screen, device UI
@@ -101,11 +121,11 @@ Snapshots, UI content, Image Evidence, and action evidence retained only in Targ
 _Avoid_: Device cache, persisted snapshot
 
 **Session Credential**:
-An ephemeral in-memory secret scoped to a Target process generation or Protocol Session. It is never stored in configuration, disk, Keychain, argv, logs, Machine Results, or Artifacts.
+An ephemeral in-memory authentication secret scoped either to one Target process bootstrap or one Protocol Session. Process Bootstrap Secrets and Protocol Session keys are distinct and never interchangeable.
 _Avoid_: API key, saved token
 
 **Session Key Isolation**:
-Each Protocol Session uses an independent credential or session key that is never reused across Agents, Targets, or concurrent sessions. A process bootstrap secret may establish sessions but cannot be exposed or reused as an action credential.
+Each Protocol Session uses an independent key that is never reused across Agents, Targets, or concurrent sessions. A Process Bootstrap Secret may authorize session establishment but is never reused as the session key or an action credential.
 _Avoid_: Shared session token, bootstrap action token
 
 **Diagnostic Metadata**:
