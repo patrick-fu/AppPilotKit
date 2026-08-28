@@ -17,6 +17,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - runner: macos-15
@@ -27,6 +28,7 @@ jobs:
             arch: x86_64
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
+      CARGO_BUILD_JOBS: "1"
       SPIKE_PACKAGE: apppilotkit-rust-foundation-spike
       SPIKE_BINARY: apppilotkit-rust-foundation-spike
       CONTRACT_PACKAGE: apppilotkit-cli-contract

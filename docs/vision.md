@@ -15,6 +15,8 @@ AppPilotKit has four cooperating parts:
 
 The SDK exposes runtime truth that external automation cannot reliably see. Platform tools such as `devicectl`, USB tunnels, ADB, and UI automation APIs may be used as transport or fallback primitives, but they do not define the public product model.
 
+The internal dogfood MVP runs on Apple Silicon macOS Hosts. Native x86_64 CLI builds remain portability evidence, but Intel is not a supported dogfood Host.
+
 ## Initial capabilities
 
 ### Inspect
@@ -73,7 +75,6 @@ Cross-platform commands may normalize common fields, but raw platform details re
 
 ## Not decided yet
 
-- CLI executable name.
 - Package coordinates and public license.
 - MCP and Agent Skill adapters; SDK and CLI come first.
 - Optional compatibility adapters for Lookin, Appium, or other ecosystems.
