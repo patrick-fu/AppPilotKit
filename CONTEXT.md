@@ -5,7 +5,7 @@ AppPilotKit lets coding Agents inspect and operate opted-in mobile apps through 
 ## Language
 
 **Host**:
-The macOS machine where coding Agents and the AppPilotKit desktop CLI run. The MVP supports both Apple Silicon and Intel Hosts; Linux and Windows Hosts are deferred.
+The Apple Silicon macOS machine where coding Agents and the AppPilotKit desktop CLI run. Intel, Linux, and Windows are not internally dogfoodable MVP Hosts; native x86_64 CLI checks are portability evidence only.
 _Avoid_: Target device, client
 
 **Opted-in App**:

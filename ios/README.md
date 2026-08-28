@@ -17,13 +17,14 @@ source, geometry, schema, and disclosure semantics.
 Run its tests from the repository root:
 
 ```sh
-swift test --package-path ios
+swift test --jobs 1 --package-path ios
 ```
 
 UIKit adapter tests run against real UIKit objects in Simulator. From `ios/`:
 
 ```sh
-xcodebuild test -scheme AppPilotKit-Package \
+xcodebuild test -jobs 1 -parallel-testing-enabled NO \
+  -scheme AppPilotKit-Package \
   -destination 'platform=iOS Simulator,id=<available-iphone-udid>' \
   -derivedDataPath .build/xcode-derived \
   CODE_SIGNING_ALLOWED=NO

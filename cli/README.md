@@ -1,6 +1,6 @@
 # CLI
 
-The desktop CLI is built in Rust on the foundation selected by ADR 0005. Its public executable name, installation, and packaging remain open decisions.
+The desktop CLI is built in Rust on the foundation selected by ADR 0005. Its public executable is `apppilotkit`; internal dogfood distribution uses a signed and notarized GitHub Release plus a Homebrew tap Formula, with updates through `brew upgrade` and no self-updater.
 
 ## Production contract core
 
@@ -22,8 +22,8 @@ From this directory:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-targets --all-features --locked
+cargo clippy --jobs 1 --workspace --all-targets --all-features --locked -- -D warnings
+cargo test --jobs 1 --workspace --all-targets --all-features --locked
 ```
 
 The native macOS workflow repeats these checks for `aarch64-apple-darwin` and `x86_64-apple-darwin`, explicitly builds the production contract core, and runs the existing protocol suite.
