@@ -2,7 +2,7 @@
 
 Status: research recommendation, not an accepted implementation or protocol decision
 Decision issue: [#24](https://github.com/patrick-fu/AppPilotKit/issues/24)
-Evidence reused: [#1](https://github.com/patrick-fu/AppPilotKit/issues/1), including [`c27b520`](https://github.com/patrick-fu/AppPilotKit/commit/c27b520), [`54a60e5`](https://github.com/patrick-fu/AppPilotKit/commit/54a60e5), [`61f70b1`](https://github.com/patrick-fu/AppPilotKit/commit/61f70b1), [`cba6c8f`](https://github.com/patrick-fu/AppPilotKit/commit/cba6c8f), and [`fd2616b`](https://github.com/patrick-fu/AppPilotKit/commit/fd2616b)
+Evidence reused: [#1](https://github.com/patrick-fu/AppPilotKit/issues/1), including its accepted iOS Simulator, Android Emulator, Release-isolation, and wired-iPhone probe records
 
 ## Recommendation
 
@@ -65,7 +65,7 @@ No Apple public source found in this investigation specifies the macOS
 `/var/run/usbmuxd` plist wire protocol. The completed physical-device probe
 therefore remains **Observed/private**: it selected the hardware UDID's `USB`
 record, connected to the injected port, completed mutual proof and a JSON-RPC
-ping, and rejected a wrong token. [#1](https://github.com/patrick-fu/AppPilotKit/issues/1) [probe record at `fd2616b`](https://github.com/patrick-fu/AppPilotKit/blob/fd2616b/docs/research/ios-physical-device-transport.md)
+ping, and rejected a wrong token. [#1 physical-device verification](https://github.com/patrick-fu/AppPilotKit/issues/1#issuecomment-5152677832)
 Keep that code behind one small macOS adapter with contract tests; never
 describe it as an Apple SDK API or leak usbmux fields into the product model.
 
@@ -177,7 +177,7 @@ from `ProcessInfo.environment`. [Apple: `ProcessInfo.environment`](https://devel
 **Observed:** the Issue #1 Simulator gate twice established a mutually
 authenticated loopback session, closed the listener and invalidated its session
 on background, reopened on foreground, then rejected the pre-restart session
-after process termination/relaunch. [`54a60e5`](https://github.com/patrick-fu/AppPilotKit/commit/54a60e5) [`61f70b1`](https://github.com/patrick-fu/AppPilotKit/commit/61f70b1)
+after process termination/relaunch. [#1](https://github.com/patrick-fu/AppPilotKit/issues/1)
 
 ### Wired iPhone
 
@@ -211,7 +211,7 @@ endpoint, and `tcp:0` requests an available host port. [Android Developers: ADB 
 Issue #1 Platform Tools probe, and appears in the local `adb 36.0.2` help, but
 is omitted from the currently published user man page. It is therefore an
 implementation CLI/AOSP seam to feature-probe, not a permanent product ABI.
-[AOSP: ADB services](https://android.googlesource.com/platform/packages/modules/adb/+/HEAD/docs/dev/services.md) [`cba6c8f`](https://github.com/patrick-fu/AppPilotKit/commit/cba6c8f)
+[AOSP: ADB services](https://android.googlesource.com/platform/packages/modules/adb/+/HEAD/docs/dev/services.md) [#1](https://github.com/patrick-fu/AppPilotKit/issues/1)
 Android's `LocalServerSocket` creates an inbound UNIX-domain socket in the
 Linux abstract namespace. [Android API: `LocalServerSocket`](https://developer.android.com/reference/android/net/LocalServerSocket)
 
@@ -234,7 +234,7 @@ forwarding, activity extras for the name **and token**, wrong-token rejection,
 and a Release APK marker check on `emulator-5556`. That token path is
 **Observed feasibility only** and rejected for production: `am start --es` is
 documented for string extras but gives no secret-redaction guarantee and places
-the value in argv/command transport. [Android Developers: Activity Manager](https://developer.android.com/tools/adb) [`cba6c8f`](https://github.com/patrick-fu/AppPilotKit/commit/cba6c8f) [#1](https://github.com/patrick-fu/AppPilotKit/issues/1)
+the value in argv/command transport. [Android Developers: Activity Manager](https://developer.android.com/tools/adb) [#1](https://github.com/patrick-fu/AppPilotKit/issues/1)
 
 ## Stream framing, authentication, and `session.open`
 
@@ -329,7 +329,7 @@ must be conservative about multi-window:
 
 The iOS Simulator probe already observed listener close/reopen and old-session
 rejection on background/foreground, and old-session rejection after process
-restart. [`54a60e5`](https://github.com/patrick-fu/AppPilotKit/commit/54a60e5) [`61f70b1`](https://github.com/patrick-fu/AppPilotKit/commit/61f70b1)
+restart. [#1](https://github.com/patrick-fu/AppPilotKit/issues/1)
 The equivalent Android lifecycle and physical Android device matrix is still
 unverified.
 
