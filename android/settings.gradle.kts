@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "apppilotkit-android"
 include(":semantic-registry")
+include(":protocol-runtime")
