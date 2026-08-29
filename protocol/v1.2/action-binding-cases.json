@@ -1,0 +1,107 @@
+{
+  "algorithm": "sha256",
+  "digestPrefix": "sha256:",
+  "cases": [
+    {
+      "id": "object-key-order",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "{\"b\":1,\"a\":2}",
+        "{\"a\":2,\"b\":1}"
+      ],
+      "canonical": "{\"a\":2,\"b\":1}",
+      "digest": "sha256:d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+    },
+    {
+      "id": "unicode-key-order",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "{\"é\":1,\"a\":2}",
+        "{\"a\":2,\"é\":1}"
+      ],
+      "canonical": "{\"a\":2,\"é\":1}",
+      "digest": "sha256:13f878ef9384d590f247c529a1b5831722a4bc7d02c8a6757ecd7b9b5b31cd06"
+    },
+    {
+      "id": "escape-equivalent",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "{\"path\":\"A/B\"}",
+        "{\"path\":\"A\\u002fB\"}"
+      ],
+      "canonical": "{\"path\":\"A/B\"}",
+      "digest": "sha256:26448a276f438bfc3ac7049406ce50aec0e8b78c3a253c1baf9e2a285086eece"
+    },
+    {
+      "id": "unicode-no-normalization",
+      "expect": "distinctDigest",
+      "jsonTexts": [
+        "\"\\u00e9\"",
+        "\"e\\u0301\""
+      ],
+      "digests": [
+        "sha256:f2886017e9c7abacf804b54d64787dce2b611c9544ba21f3affdd126a6e50086",
+        "sha256:3d68ce21f2899a475713cdbe7562ba9bdb6b1dfde8af1f221bdff4a0935b53b2"
+      ]
+    },
+    {
+      "id": "int64-exact",
+      "expect": "distinctDigest",
+      "jsonTexts": [
+        "9223372036854775807",
+        "9223372036854775806"
+      ],
+      "digests": [
+        "sha256:b34a1c30a715f6bf8b7243afa7fab883ce3612b7231716bdcbbdc1982e1aed29",
+        "sha256:73b94a8ddf2cb06f9795f38faead5d3d3de7042f0285586efd9d75c3e53c3617"
+      ]
+    },
+    {
+      "id": "negative-zero",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "0",
+        "-0",
+        "0.0",
+        "-0.0"
+      ],
+      "canonical": "0",
+      "digest": "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "id": "finite-decimal",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "1.25",
+        "12.5e-1"
+      ],
+      "canonical": "1.25",
+      "digest": "sha256:004a9e0878ff83e6b91f50d50dad439d2065c6cbb0d20f1f328b2fd75e085d6a"
+    },
+    {
+      "id": "finite-exponent-tiny",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "1e-7",
+        "1E-7"
+      ],
+      "canonical": "1e-7",
+      "digest": "sha256:5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"
+    },
+    {
+      "id": "finite-exponent-huge",
+      "expect": "sameDigest",
+      "jsonTexts": [
+        "1e21",
+        "1E+21"
+      ],
+      "canonical": "1e+21",
+      "digest": "sha256:241c4643fa70b1dcde1205b71be4e3bebb17e9f880c8e1a33d0ead6c27271d3c"
+    },
+    {
+      "id": "nan-inf-fail-closed",
+      "expect": "failClosed",
+      "synthetic": ["NaN", "Infinity", "-Infinity"]
+    }
+  ]
+}

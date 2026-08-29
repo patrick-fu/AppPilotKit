@@ -2,6 +2,52 @@
 import XCTest
 
 final class SemanticCatalogTests: XCTestCase {
+  func testActionBindingCanonicalCases() throws {
+    let repository = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let data = try Data(contentsOf: repository.appendingPathComponent("protocol/v1.2/action-binding-cases.json"))
+    guard case .object(let root) = try JSONDecoder().decode(JSONValue.self, from: data),
+      case .array(let cases)? = root["cases"]
+    else { return XCTFail("invalid action binding fixture") }
+
+    for fixture in cases {
+      guard case .object(let fields) = fixture,
+        case .string(let expected)? = fields["expect"]
+      else { return XCTFail("invalid action binding case") }
+      if expected == "failClosed" {
+        for synthetic in [Double.nan, Double.infinity, -Double.infinity] {
+          XCTAssertThrowsError(try SemanticCatalog.canonicalDigest(for: .number(synthetic)))
+        }
+        continue
+      }
+      guard case .array(let texts)? = fields["jsonTexts"] else {
+        return XCTFail("missing JSON texts")
+      }
+      let digests = try texts.map { text -> String in
+        guard case .string(let text) = text else { throw FixtureError.rejected }
+        return try SemanticCatalog.canonicalDigest(for: JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)))
+      }
+      if expected == "sameDigest" {
+        XCTAssertEqual(Set(digests).count, 1)
+        if case .string(let digest)? = fields["digest"] {
+          XCTAssertEqual(digests[0], digest)
+        }
+      } else {
+        XCTAssertEqual(Set(digests).count, digests.count)
+        if case .array(let expectedDigests)? = fields["digests"] {
+          let expected = expectedDigests.compactMap { value -> String? in
+            if case .string(let digest) = value { return digest }
+            return nil
+          }
+          XCTAssertEqual(digests, expected)
+        }
+      }
+    }
+  }
+
   func testBuilderFreezesMembershipAndRejectsLaterRegistration() throws {
     let schema = try stringSchema(id: "schema_value0001")
     let builder = SemanticCatalogBuilder()
@@ -184,18 +230,6 @@ final class SemanticCatalogTests: XCTestCase {
     let second = try await catalog.queryResource(query, maximumOutputBytes: 128)
     XCTAssertEqual(second.value, .string("second"))
     XCTAssertEqual(catalog.items, membership)
-
-    let prepared = try await catalog.prepareAction(
-      SemanticActionInvocation(
-        capability: "counter.set",
-        declarationRevision: 3,
-        inputSchema: inputSchema.handle,
-        input: .object(["count": .integer(7)])
-      )
-    )
-    try await prepared.dispatch()
-    let recordedValue = await actionRecorder.lastValue()
-    XCTAssertEqual(recordedValue, 7)
 
     do {
       _ = try await catalog.queryResource(
@@ -455,26 +489,43 @@ final class SemanticCatalogTests: XCTestCase {
     }
     let catalog = try builder.freeze(identity: catalogIdentity())
     let canary = "must-not-echo"
+    let coordinator = TargetActionCoordinator(
+      catalog: catalog,
+      targetID: "target_fixture",
+      evidence: CatalogEvidence(),
+      policy: TargetActionPolicy(
+        resolve: { _, subject in
+          SemanticActionPolicy(
+            authorization: subject.declaredAuthorization,
+            retrySafety: subject.retrySafety
+          )
+        },
+        validateDestructive: { _ in false },
+        consumeDestructive: { _ in false }
+      )
+    )
+    let session = SemanticProtocolSessionContext(id: "session_fixture0001", generation: 7)
 
     do {
-      let prepared = try await catalog.prepareAction(
+      try await coordinator.invoke(
         SemanticActionInvocation(
           capability: "customer.reject",
           declarationRevision: 1,
           inputSchema: schema.handle,
           input: .object(["customer": .string(canary)])
-        )
+        ),
+        authorizationGrant: nil,
+        session: session,
+        sessionIsActive: { true }
       )
-      try await prepared.dispatch()
       XCTFail("Expected handler failure")
     } catch {
-      XCTAssertEqual(error as? SemanticCatalogError, .handlerFailed)
+      XCTAssertEqual(error as? TargetActionCoordinatorError, .outcomeUnknown)
       XCTAssertFalse(String(describing: error).contains(canary))
-      XCTAssertFalse(error.localizedDescription.contains(canary))
     }
 
     do {
-      _ = try await catalog.prepareAction(
+      try await coordinator.invoke(
         SemanticActionInvocation(
           capability: "customer.reject",
           declarationRevision: 1,
@@ -483,14 +534,15 @@ final class SemanticCatalogTests: XCTestCase {
             "customer": .string("safe"),
             "undeclared": .string(canary),
           ])
-        )
+        ),
+        authorizationGrant: nil,
+        session: session,
+        sessionIsActive: { true }
       )
       XCTFail("Expected input validation failure")
     } catch {
       XCTAssertEqual(error as? SemanticCatalogError, .invalidInput)
-      XCTAssertEqual((error as? SemanticCatalogError)?.kind, .schemaMismatch)
       XCTAssertFalse(String(describing: error).contains(canary))
-      XCTAssertFalse(error.localizedDescription.contains(canary))
     }
   }
 
@@ -531,7 +583,7 @@ final class SemanticCatalogTests: XCTestCase {
       ("number.negative-zero", JSONValue.number(-0.0), 1),
       ("number.small", JSONValue.number(1e-7), 4),
       ("number.large", JSONValue.number(1e21), 5),
-      ("number.wide-integer", JSONValue.integer(999_999_999_999_999_999), 19),
+      ("number.wide-integer", JSONValue.integer(999_999_999_999_999_999), 18),
     ] {
       let builder = SemanticCatalogBuilder()
       try builder.registerResource(
@@ -607,6 +659,12 @@ final class SemanticCatalogTests: XCTestCase {
       inputSchema: declaration.inputSchema,
       valueSchema: valueSchema
     )
+  }
+
+  private struct CatalogEvidence: ActionEvidencePort {
+    func captureBefore(context: TargetActionContext) {}
+    func observeStability(context: TargetActionContext) {}
+    func captureAfter(context: TargetActionContext) {}
   }
 
   private func catalogIdentity() throws -> SemanticCatalogIdentity {

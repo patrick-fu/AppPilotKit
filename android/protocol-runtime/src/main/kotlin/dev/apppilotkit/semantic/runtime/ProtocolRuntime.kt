@@ -5,6 +5,7 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.SecureRandom
 import dev.apppilotkit.semantic.ActionDeclaration
+import dev.apppilotkit.semantic.ActionInvocation
 import dev.apppilotkit.semantic.AuthorizationPolicy
 import dev.apppilotkit.semantic.ResourceDeclaration
 import dev.apppilotkit.semantic.ResourceQuery
@@ -15,6 +16,11 @@ import dev.apppilotkit.semantic.SemanticFailure
 import dev.apppilotkit.semantic.SemanticFailureKind
 import dev.apppilotkit.semantic.SemanticKind
 import dev.apppilotkit.semantic.SemanticRegistry
+import dev.apppilotkit.semantic.TargetActionContext
+import dev.apppilotkit.semantic.TargetActionCoordinator
+import dev.apppilotkit.semantic.TargetActionFailure
+import dev.apppilotkit.semantic.TargetActionFailureKind
+import dev.apppilotkit.semantic.TargetActionRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -51,6 +57,7 @@ data class SemanticProtocolPolicy(
     val discover: (ProtocolSessionContext, SemanticDeclaration) -> Boolean,
     val discloseSchema: (ProtocolSessionContext, SemanticDeclaration) -> Boolean,
     val discloseResource: (ProtocolSessionContext, ResourceDeclaration) -> Boolean,
+    val discloseAction: (ProtocolSessionContext, ActionDeclaration) -> Boolean,
 )
 
 /**
@@ -61,6 +68,8 @@ class ProtocolRuntime(
     private val catalog: SemanticRegistry,
     private val limits: ProtocolRuntimeLimits,
     private val policy: SemanticProtocolPolicy,
+    private val actionCoordinator: TargetActionCoordinator,
+    private val targetId: String,
 ) {
     private data class Session(
         val context: ProtocolSessionContext,
@@ -85,6 +94,7 @@ class ProtocolRuntime(
         val kind: String,
         val stockMessage: String,
         val retryable: Boolean,
+        val details: Map<String, String> = emptyMap(),
     ) : RuntimeException(stockMessage)
 
     private val stateLock = Any()
@@ -146,6 +156,7 @@ class ProtocolRuntime(
             "semantic.show" -> show(id, session, params)
             "semantic.schema" -> schema(id, session, params)
             "semantic.query" -> query(id, session, params)
+            "semantic.invoke" -> invoke(id, session, params)
             else -> throw METHOD_NOT_FOUND
         }
     }
@@ -265,14 +276,14 @@ class ProtocolRuntime(
         val handle = schemaHandle(params["schema"])
         ensureActive(session)
         val declaration = discoveredDeclaration(session.context, capability, revision)
-        if (!declaredHandles(declaration).contains(handle)) throw semanticSchemaMismatch()
+        if (!declaredHandles(declaration).contains(handle)) throw semanticSchemaMismatch(capability)
         ensureActive(session)
-        if (!permitsSchema(session.context, declaration)) throw semanticDisclosureDenied()
+        if (!permitsSchema(session.context, declaration)) throw semanticDisclosureDenied(capability)
         val document = try {
             ensureActive(session)
             catalog.schema(capability, revision.toInt(), handle)
         } catch (failure: SemanticFailure) {
-            throw mapFailure(failure)
+            throw mapFailure(failure, capability)
         }
         return activeSuccess(session, id) { buildJsonObject {
             put("schema", schemaValue(handle))
@@ -284,22 +295,22 @@ class ProtocolRuntime(
         requireKeys(params, setOf("capability", "declarationRevision", "inputSchema", "input", "valueSchema"), INVALID_PARAMS)
         val capability = capability(params["capability"])
         val revision = positiveLong(params["declarationRevision"])
-        if (revision > Int.MAX_VALUE) throw semanticSchemaMismatch()
+        if (revision > Int.MAX_VALUE) throw semanticSchemaMismatch(capability)
         val inputSchema = params["inputSchema"]?.let(::schemaHandle)
         val input = params["input"]
         val valueSchema = schemaHandle(params["valueSchema"])
         if ((inputSchema == null) != (input == null)) throw INVALID_PARAMS
         ensureActive(session)
         val declaration = discoveredDeclaration(session.context, capability, revision)
-        val resource = declaration as? ResourceDeclaration ?: throw semanticCapabilityNotFound()
-        if (resource.valueSchema != valueSchema || resource.inputSchema != inputSchema) throw semanticSchemaMismatch()
+        val resource = declaration as? ResourceDeclaration ?: throw semanticCapabilityNotFound(capability)
+        if (resource.valueSchema != valueSchema || resource.inputSchema != inputSchema) throw semanticSchemaMismatch(capability)
         ensureActive(session)
-        if (!permitsResource(session.context, resource)) throw semanticDisclosureDenied()
+        if (!permitsResource(session.context, resource)) throw semanticDisclosureDenied(capability)
         val result = try {
             ensureActive(session)
             catalog.query(ResourceQuery(capability, revision.toInt(), inputSchema, input, valueSchema))
         } catch (failure: SemanticFailure) {
-            throw mapFailure(failure)
+            throw mapFailure(failure, capability)
         }
         return activeSuccess(session, id) { buildJsonObject {
             put("value", result.value)
@@ -308,15 +319,60 @@ class ProtocolRuntime(
         } }
     }
 
+    private fun invoke(id: JsonPrimitive, session: Session, params: JsonObject): JsonObject {
+        requireKeys(
+            params,
+            setOf("capability", "declarationRevision", "inputSchema", "input", "authorizationGrant"),
+            INVALID_PARAMS,
+        )
+        val capability = capability(params["capability"])
+        val revision = positiveLong(params["declarationRevision"])
+        if (revision > Int.MAX_VALUE || "input" !in params) throw INVALID_PARAMS
+        val inputSchema = schemaHandle(params["inputSchema"])
+        val input = params["input"] ?: throw INVALID_PARAMS
+        val grant = params["authorizationGrant"]?.let { value ->
+            string(value, 256)?.takeIf { it.isNotEmpty() } ?: throw INVALID_PARAMS
+        }
+        ensureActive(session)
+        val declaration = discoveredDeclaration(session.context, capability, revision)
+        val action = declaration as? ActionDeclaration ?: throw semanticCapabilityNotFound(capability)
+        if (action.inputSchema != inputSchema) throw semanticSchemaMismatch(capability)
+        ensureActive(session)
+        if (!permitsActionDisclosure(session.context, action)) throw semanticDisclosureDenied(capability)
+
+        try {
+            actionCoordinator.invoke(
+                TargetActionRequest(
+                    invocation = ActionInvocation(capability, revision.toInt(), inputSchema, input),
+                    context = TargetActionContext(targetId, session.context.generation, session.context.id),
+                    authorizationGrant = grant,
+                    sessionIsActive = { isActive(session) },
+                ),
+            )
+        } catch (failure: SemanticFailure) {
+            throw mapFailure(failure, capability)
+        } catch (failure: TargetActionFailure) {
+            throw mapActionFailure(failure, capability)
+        }
+
+        // Session loss after handler handoff cannot prove that the response was acknowledged.
+        if (!isActive(session)) throw actionOutcomeUnknown(capability)
+        return success(id, buildJsonObject {
+            put("capability", capability)
+            put("declarationRevision", revision)
+            put("completed", true)
+        })
+    }
+
     private fun discoveredDeclaration(
         context: ProtocolSessionContext,
         capability: String,
         revision: Long,
     ): SemanticDeclaration {
-        val declaration = catalog.list().firstOrNull { it.id == capability } ?: throw semanticCapabilityNotFound()
-        if (!permitsDiscovery(context, declaration)) throw semanticCapabilityNotFound()
+        val declaration = catalog.list().firstOrNull { it.id == capability } ?: throw semanticCapabilityNotFound(capability)
+        if (!permitsDiscovery(context, declaration)) throw semanticCapabilityNotFound(capability)
         if (revision > Int.MAX_VALUE || declaration.declarationRevision.toLong() != revision) {
-            throw semanticSchemaMismatch()
+            throw semanticSchemaMismatch(capability)
         }
         return declaration
     }
@@ -330,7 +386,14 @@ class ProtocolRuntime(
     private fun permitsResource(context: ProtocolSessionContext, declaration: ResourceDeclaration): Boolean =
         runCatching { policy.discloseResource(context, declaration) }.getOrDefault(false)
 
+    private fun permitsActionDisclosure(context: ProtocolSessionContext, declaration: ActionDeclaration): Boolean =
+        runCatching { policy.discloseAction(context, declaration) }.getOrDefault(false)
+
     private fun ensureActive(session: Session) = synchronized(stateLock) { ensureActiveLocked(session) }
+
+    private fun isActive(session: Session): Boolean = synchronized(stateLock) {
+        sessions[session.context.id] == session
+    }
 
     private fun ensureActiveLocked(session: Session) {
         if (sessions[session.context.id] != session) throw SESSION_EXPIRED
@@ -537,6 +600,11 @@ class ProtocolRuntime(
             putJsonObject("data") {
                 put("kind", fault.kind)
                 put("retryable", fault.retryable)
+                if (fault.details.isNotEmpty()) {
+                    putJsonObject("details") {
+                        fault.details.forEach { (key, value) -> put(key, value) }
+                    }
+                }
             }
         }
     })
@@ -550,13 +618,21 @@ class ProtocolRuntime(
         .decode(ByteBuffer.wrap(bytes))
         .toString()
 
-    private fun mapFailure(failure: SemanticFailure): Fault = when (failure.kind) {
-        SemanticFailureKind.CAPABILITY_NOT_FOUND -> semanticCapabilityNotFound()
-        SemanticFailureKind.SCHEMA_MISMATCH -> semanticSchemaMismatch()
-        SemanticFailureKind.UNAVAILABLE -> semanticUnavailable()
-        SemanticFailureKind.DISCLOSURE_DENIED -> semanticDisclosureDenied()
+    private fun mapFailure(failure: SemanticFailure, capability: String): Fault = when (failure.kind) {
+        SemanticFailureKind.CAPABILITY_NOT_FOUND -> semanticCapabilityNotFound(capability)
+        SemanticFailureKind.SCHEMA_MISMATCH -> semanticSchemaMismatch(capability)
+        SemanticFailureKind.UNAVAILABLE -> semanticUnavailable(capability)
+        SemanticFailureKind.DISCLOSURE_DENIED -> semanticDisclosureDenied(capability)
         SemanticFailureKind.RESOURCE_EXHAUSTED -> RESOURCE_EXHAUSTED
         else -> INTERNAL_ERROR
+    }
+
+    private fun mapActionFailure(failure: TargetActionFailure, capability: String): Fault = when (failure.kind) {
+        TargetActionFailureKind.SESSION_EXPIRED -> SESSION_EXPIRED
+        TargetActionFailureKind.POLICY_DENIED -> actionPolicyDenied(capability)
+        TargetActionFailureKind.CONFLICT -> actionConflict(capability)
+        TargetActionFailureKind.PRE_DISPATCH_FAILED -> INTERNAL_ERROR
+        TargetActionFailureKind.OUTCOME_UNKNOWN -> actionOutcomeUnknown(capability)
     }
 
     private fun newSessionId(): String = "session_${randomToken()}"
@@ -564,10 +640,34 @@ class ProtocolRuntime(
 
     private fun randomToken(): String = ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
 
-    private fun semanticCapabilityNotFound() = Fault(-32020, "semantic.capabilityNotFound", "Semantic capability is unavailable", false)
-    private fun semanticSchemaMismatch() = Fault(-32021, "semantic.schemaMismatch", "Semantic schema does not match", false)
-    private fun semanticUnavailable() = Fault(-32022, "semantic.unavailable", "Semantic capability is unavailable", true)
-    private fun semanticDisclosureDenied() = Fault(-32023, "semantic.disclosureDenied", "Semantic disclosure is denied", false)
+    private fun semanticCapabilityNotFound(capability: String) = Fault(
+        -32020, "semantic.capabilityNotFound", "Semantic capability is unavailable", false,
+        mapOf("capability" to capability),
+    )
+    private fun semanticSchemaMismatch(capability: String) = Fault(
+        -32021, "semantic.schemaMismatch", "Semantic schema does not match", false,
+        mapOf("capability" to capability),
+    )
+    private fun semanticUnavailable(capability: String) = Fault(
+        -32022, "semantic.unavailable", "Semantic capability is unavailable", true,
+        mapOf("capability" to capability),
+    )
+    private fun semanticDisclosureDenied(capability: String) = Fault(
+        -32023, "semantic.disclosureDenied", "Semantic disclosure is denied", false,
+        mapOf("capability" to capability),
+    )
+    private fun actionPolicyDenied(capability: String) = Fault(
+        -32024, "action.policyDenied", "Action policy is denied", false,
+        mapOf("capability" to capability, "field" to "authorizationGrant"),
+    )
+    private fun actionConflict(capability: String) = Fault(
+        -32025, "action.conflict", "Action conflicts with an in-flight mutation", false,
+        mapOf("capability" to capability),
+    )
+    private fun actionOutcomeUnknown(capability: String) = Fault(
+        -32026, "action.outcomeUnknown", "Action outcome is unknown", false,
+        mapOf("capability" to capability),
+    )
 
     private companion object {
         val JSON = Json { ignoreUnknownKeys = false; explicitNulls = false }

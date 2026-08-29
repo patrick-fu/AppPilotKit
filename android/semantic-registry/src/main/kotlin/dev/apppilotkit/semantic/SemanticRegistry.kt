@@ -5,6 +5,8 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -20,6 +22,7 @@ private val CAPABILITY_ID = Regex("^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 private val CATALOG_ID = Regex("^catalog_[A-Za-z0-9._~-]{8,120}$")
 private val SCHEMA_ID = Regex("^schema_[A-Za-z0-9._~-]{8,120}$")
 private val SCHEMA_URI = Regex("^[a-z][a-z0-9+.-]*:.*$")
+private val JSON_INTEGER = Regex("^-?[0-9]+$")
 
 enum class SemanticKind { RESOURCE, ACTION }
 
@@ -159,6 +162,115 @@ data class ActionInvocation(
     val inputSchema: SchemaHandle,
     val input: JsonElement,
 )
+
+/** Target-local identity used to bind action policy and authorization checks. */
+data class TargetActionContext(
+    val targetId: String,
+    val processGeneration: Long,
+    val sessionId: String,
+) {
+    init {
+        require(targetId.isNotBlank())
+        require(processGeneration >= 1)
+        require(sessionId.isNotBlank())
+    }
+}
+
+/** A resolved policy. There is intentionally no implicit or permissive policy. */
+data class EffectiveActionPolicy(
+    val authorization: AuthorizationPolicy,
+    val retrySafety: RetrySafety,
+)
+
+/** The policy identity projected from a Semantic Action or an ordinary mutation. */
+data class ActionPolicySubject(
+    val id: String,
+    val authorization: AuthorizationPolicy,
+    val retrySafety: RetrySafety,
+)
+
+/** The exact canonical material to which a destructive grant is bound. */
+data class CanonicalActionBinding(
+    val targetId: String,
+    val processGeneration: Long,
+    val sessionId: String,
+    val capability: String,
+    val declarationRevision: Int,
+    val inputSchema: SchemaHandle,
+    val inputDigest: String,
+)
+
+data class DestructiveAuthorizationRequest(
+    val binding: CanonicalActionBinding,
+    val grant: String,
+)
+
+fun interface EffectiveActionPolicyResolver {
+    fun resolve(context: TargetActionContext, subject: ActionPolicySubject): EffectiveActionPolicy?
+}
+
+interface DestructiveAuthorizationValidator {
+    /** Read-only validation. It must not consume or mutate the grant. */
+    fun validate(request: DestructiveAuthorizationRequest): Boolean
+
+    /** Atomically revalidates every binding and expiry, then consumes at most once. */
+    fun consume(request: DestructiveAuthorizationRequest): Boolean
+}
+
+/**
+ * Target-owned evidence lifecycle. Production composition must inject a real implementation;
+ * there is deliberately no no-op default.
+ */
+interface ActionEvidencePort {
+    fun captureBefore(context: TargetActionContext)
+    fun observeStability(context: TargetActionContext)
+    fun captureAfter(context: TargetActionContext)
+}
+
+data class TargetActionRequest(
+    val invocation: ActionInvocation,
+    val context: TargetActionContext,
+    val authorizationGrant: String?,
+    val sessionIsActive: () -> Boolean,
+)
+
+enum class TargetActionResult { COMPLETED }
+
+enum class TargetActionFailureKind {
+    SESSION_EXPIRED,
+    POLICY_DENIED,
+    CONFLICT,
+    PRE_DISPATCH_FAILED,
+    OUTCOME_UNKNOWN,
+}
+
+class TargetActionFailure(val kind: TargetActionFailureKind) : RuntimeException(
+    when (kind) {
+        TargetActionFailureKind.SESSION_EXPIRED -> "Session expired."
+        TargetActionFailureKind.POLICY_DENIED -> "Action policy is denied."
+        TargetActionFailureKind.CONFLICT -> "Action conflicts with an in-flight mutation."
+        TargetActionFailureKind.PRE_DISPATCH_FAILED -> "Action failed before dispatch."
+        TargetActionFailureKind.OUTCOME_UNKNOWN -> "Action outcome is unknown."
+    },
+)
+
+/** The sole public mutation facade; it never exposes a prepared handler. */
+interface TargetActionCoordinator {
+    fun invoke(request: TargetActionRequest): TargetActionResult
+}
+
+/** Internal provider seam for non-semantic mutations; protocol runtimes never receive it. */
+internal data class OrdinaryMutationRequest(
+    val context: TargetActionContext,
+    val subject: ActionPolicySubject,
+    val authorizationGrant: String?,
+    val sessionIsActive: () -> Boolean,
+    val mutation: () -> Unit,
+)
+
+internal interface TargetActionMutationCoordinator : TargetActionCoordinator {
+    fun invokeOrdinary(request: OrdinaryMutationRequest): TargetActionResult
+}
 
 enum class SemanticFailureKind(val stockMessage: String) {
     INVALID_REGISTRATION("Semantic registration is invalid."),
@@ -373,7 +485,35 @@ class SemanticRegistry internal constructor(
         return disclose(encoded, entry.valueCodec, entry.declaration.valueSchema)
     }
 
-    internal fun prepareAction(request: ActionInvocation): PreparedAction {
+    /**
+     * Creates the only supported Action execution facade for this frozen Catalog.
+     * The actual preparation and dispatch closure remain private to this registry.
+     */
+    fun targetActionCoordinator(
+        targetId: String,
+        policyResolver: EffectiveActionPolicyResolver,
+        destructiveAuthorizationValidator: DestructiveAuthorizationValidator,
+        evidence: ActionEvidencePort,
+    ): TargetActionCoordinator = targetActionMutationCoordinator(
+        targetId,
+        policyResolver,
+        destructiveAuthorizationValidator,
+        evidence,
+    )
+
+    internal fun targetActionMutationCoordinator(
+        targetId: String,
+        policyResolver: EffectiveActionPolicyResolver,
+        destructiveAuthorizationValidator: DestructiveAuthorizationValidator,
+        evidence: ActionEvidencePort,
+    ): TargetActionMutationCoordinator = Coordinator(
+        targetId,
+        policyResolver,
+        destructiveAuthorizationValidator,
+        evidence,
+    )
+
+    private fun validateAction(request: ActionInvocation, context: TargetActionContext): ValidatedAction {
         val entry = matchingEntry(request.capability, request.declarationRevision) as? ActionEntry
             ?: throw SemanticFailure(SemanticFailureKind.CAPABILITY_NOT_FOUND)
         if (request.inputSchema != entry.declaration.inputSchema) {
@@ -383,7 +523,218 @@ class SemanticRegistry internal constructor(
         if (!safeAvailability(entry.available)) {
             throw SemanticFailure(SemanticFailureKind.UNAVAILABLE)
         }
-        return PreparedAction(entry.declaration, typedInput, entry.invoke)
+        return ValidatedAction(
+            declaration = entry.declaration,
+            binding = CanonicalActionBinding(
+                targetId = context.targetId,
+                processGeneration = context.processGeneration,
+                sessionId = context.sessionId,
+                capability = entry.declaration.id,
+                declarationRevision = entry.declaration.declarationRevision,
+                inputSchema = entry.declaration.inputSchema,
+                inputDigest = canonicalDigest(request.input),
+            ),
+            typedInput = typedInput,
+            invoke = entry.invoke,
+        )
+    }
+
+    private inner class Coordinator(
+        private val targetId: String,
+        private val policyResolver: EffectiveActionPolicyResolver,
+        private val destructiveAuthorizationValidator: DestructiveAuthorizationValidator,
+        private val evidence: ActionEvidencePort,
+    ) : TargetActionMutationCoordinator {
+        init {
+            require(targetId.isNotBlank())
+        }
+
+        override fun invoke(request: TargetActionRequest): TargetActionResult {
+            ensureTargetContext(request.context)
+            ensureSessionActive(request.sessionIsActive)
+            val validated = validateAction(request.invocation, request.context)
+            val subject = actionSubject(validated.declaration)
+            val effective = resolveEffectivePolicy(request.context, subject)
+            val authorization = destructiveAuthorization(
+                subject = subject,
+                binding = validated.binding,
+                grant = request.authorizationGrant,
+            )
+            if (authorization != null && !validateAuthorization(authorization)) {
+                throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            }
+            if (!TargetWriters.tryAcquire(targetId)) {
+                throw TargetActionFailure(TargetActionFailureKind.CONFLICT)
+            }
+            try {
+                return performValidatedMutation(
+                    context = request.context,
+                    sessionIsActive = request.sessionIsActive,
+                    authorization = authorization,
+                ) {
+                    try {
+                        validated.invoke(validated.typedInput)
+                    } catch (_: Throwable) {
+                        throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
+                    }
+                }
+            } finally {
+                TargetWriters.release(targetId)
+            }
+        }
+
+        override fun invokeOrdinary(request: OrdinaryMutationRequest): TargetActionResult {
+            ensureTargetContext(request.context)
+            ensureSessionActive(request.sessionIsActive)
+            val effective = resolveEffectivePolicy(request.context, request.subject)
+            val binding = ordinaryBinding(request.context, request.subject)
+            val authorization = destructiveAuthorization(
+                subject = request.subject,
+                binding = binding,
+                grant = request.authorizationGrant,
+            )
+            if (authorization != null && !validateAuthorization(authorization)) {
+                throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            }
+            if (!TargetWriters.tryAcquire(targetId)) {
+                throw TargetActionFailure(TargetActionFailureKind.CONFLICT)
+            }
+            try {
+                return performValidatedMutation(
+                    context = request.context,
+                    sessionIsActive = request.sessionIsActive,
+                    authorization = authorization,
+                ) {
+                    try {
+                        request.mutation()
+                    } catch (_: Throwable) {
+                        throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
+                    }
+                }
+            } finally {
+                TargetWriters.release(targetId)
+            }
+        }
+
+        private fun performValidatedMutation(
+            context: TargetActionContext,
+            sessionIsActive: () -> Boolean,
+            authorization: DestructiveAuthorizationRequest?,
+            dispatch: () -> Unit,
+        ): TargetActionResult {
+            ensureSessionActive(sessionIsActive)
+            if (authorization != null && !consumeAuthorization(authorization)) {
+                throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            }
+            try {
+                evidence.captureBefore(context)
+            } catch (_: Throwable) {
+                throw TargetActionFailure(TargetActionFailureKind.PRE_DISPATCH_FAILED)
+            }
+            ensureSessionActive(sessionIsActive)
+
+            claimDispatch(dispatch, DispatchAuthority()).handoff()
+            ensureSessionActiveAfterHandoff(sessionIsActive)
+            try {
+                evidence.observeStability(context)
+            } catch (_: Throwable) {
+                throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
+            }
+            ensureSessionActiveAfterHandoff(sessionIsActive)
+            try {
+                evidence.captureAfter(context)
+            } catch (_: Throwable) {
+                throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
+            }
+            ensureSessionActiveAfterHandoff(sessionIsActive)
+            return TargetActionResult.COMPLETED
+        }
+
+        private fun resolveEffectivePolicy(
+            context: TargetActionContext,
+            subject: ActionPolicySubject,
+        ): EffectiveActionPolicy {
+            val effective = try {
+                policyResolver.resolve(context, subject)
+            } catch (_: Throwable) {
+                null
+            } ?: throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            if (effective.authorization != subject.authorization ||
+                effective.retrySafety != subject.retrySafety
+            ) {
+                throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            }
+            return effective
+        }
+
+        private fun destructiveAuthorization(
+            subject: ActionPolicySubject,
+            binding: CanonicalActionBinding,
+            grant: String?,
+        ): DestructiveAuthorizationRequest? {
+            if (subject.authorization != AuthorizationPolicy.DESTRUCTIVE_AUTHORIZATION) return null
+            if (grant.isNullOrEmpty()) {
+                throw TargetActionFailure(TargetActionFailureKind.POLICY_DENIED)
+            }
+            return DestructiveAuthorizationRequest(
+                binding = binding,
+                grant = grant,
+            )
+        }
+
+        private fun validateAuthorization(request: DestructiveAuthorizationRequest): Boolean = try {
+            destructiveAuthorizationValidator.validate(request)
+        } catch (_: Throwable) {
+            false
+        }
+
+        private fun consumeAuthorization(request: DestructiveAuthorizationRequest): Boolean = try {
+            destructiveAuthorizationValidator.consume(request)
+        } catch (failure: TargetActionFailure) {
+            throw failure
+        } catch (_: Throwable) {
+            throw TargetActionFailure(TargetActionFailureKind.PRE_DISPATCH_FAILED)
+        }
+
+        private fun claimDispatch(dispatch: () -> Unit, authority: DispatchAuthority): DispatchClaim =
+            DispatchClaim(dispatch, authority)
+
+        private fun actionSubject(declaration: ActionDeclaration) = ActionPolicySubject(
+            id = declaration.id,
+            authorization = declaration.policy.authorization,
+            retrySafety = declaration.policy.retrySafety,
+        )
+
+        private fun ordinaryBinding(
+            context: TargetActionContext,
+            subject: ActionPolicySubject,
+        ) = CanonicalActionBinding(
+            targetId = context.targetId,
+            processGeneration = context.processGeneration,
+            sessionId = context.sessionId,
+            capability = subject.id,
+            declarationRevision = ORDINARY_MUTATION_REVISION,
+            inputSchema = ORDINARY_MUTATION_SCHEMA,
+            inputDigest = ORDINARY_MUTATION_DIGEST,
+        )
+
+        private fun ensureTargetContext(context: TargetActionContext) {
+            if (context.targetId != targetId) {
+                throw TargetActionFailure(TargetActionFailureKind.SESSION_EXPIRED)
+            }
+        }
+
+        private fun ensureSessionActive(sessionIsActive: () -> Boolean) {
+            if (!sessionIsActive()) {
+                throw TargetActionFailure(TargetActionFailureKind.SESSION_EXPIRED)
+            }
+        }
+
+        private fun ensureSessionActiveAfterHandoff(sessionIsActive: () -> Boolean) {
+            if (!sessionIsActive()) {
+                throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
+            }
+        }
     }
 
     private fun decodeResourceInput(entry: ResourceEntry, request: ResourceQuery): Any? {
@@ -447,19 +798,40 @@ class SemanticRegistry internal constructor(
     }
 }
 
-internal class PreparedAction(
+private class ValidatedAction(
     val declaration: ActionDeclaration,
-    private val typedInput: Any,
-    private val invoke: (Any) -> Unit,
+    val binding: CanonicalActionBinding,
+    val typedInput: Any,
+    val invoke: (Any) -> Unit,
+)
+
+private class DispatchAuthority
+
+private class DispatchClaim(
+    private val dispatch: () -> Unit,
+    @Suppress("unused") private val authority: DispatchAuthority,
 ) {
-    fun dispatch() {
-        try {
-            invoke(typedInput)
-        } catch (_: Throwable) {
-            throw SemanticFailure(SemanticFailureKind.HANDLER_FAILED)
+    private val handedOff = AtomicBoolean(false)
+
+    fun handoff() {
+        if (!handedOff.compareAndSet(false, true)) {
+            throw TargetActionFailure(TargetActionFailureKind.OUTCOME_UNKNOWN)
         }
+        dispatch()
     }
 }
+
+private val ORDINARY_MUTATION_REVISION = 1
+private val ORDINARY_MUTATION_DIGEST = canonicalDigest(JsonObject(emptyMap()))
+private val ORDINARY_MUTATION_SCHEMA = SchemaHandle(
+    id = "schema_ordinary_mutation",
+    revision = 1,
+    digest = ORDINARY_MUTATION_DIGEST,
+)
+
+private fun canonicalDigest(value: JsonElement): String = MessageDigest.getInstance("SHA-256")
+    .digest(wireJson(canonicalize(value)).toByteArray(StandardCharsets.UTF_8))
+    .joinToString(separator = "", prefix = "sha256:") { "%02x".format(it) }
 
 internal data class SchemaKey(val id: String, val revision: Int)
 
@@ -535,25 +907,30 @@ private fun canonicalize(value: JsonElement): JsonElement = when (value) {
     is JsonArray -> JsonArray(value.map(::canonicalize))
     is JsonPrimitive -> when {
         value.isString || value.booleanOrNull != null || value === JsonNull -> value
-        else -> Json.parseToJsonElement(ecmaNumber(value.content))
+        else -> Json.parseToJsonElement(canonicalNumber(value.content))
     }
 }
 
 private fun wireJson(value: JsonElement): String = when (value) {
     JsonNull -> "null"
-    is JsonObject -> value.entries.joinToString(prefix = "{", postfix = "}") { (key, child) ->
+    is JsonObject -> value.entries.joinToString(separator = ",", prefix = "{", postfix = "}") { (key, child) ->
         val encodedKey = Json.encodeToString(JsonPrimitive.serializer(), JsonPrimitive(key))
         "$encodedKey:${wireJson(child)}"
     }
-    is JsonArray -> value.joinToString(prefix = "[", postfix = "]") { wireJson(it) }
+    is JsonArray -> value.joinToString(separator = ",", prefix = "[", postfix = "]") { wireJson(it) }
     is JsonPrimitive -> when {
         value.isString -> Json.encodeToString(JsonPrimitive.serializer(), value)
         value.booleanOrNull != null -> value.content
-        else -> ecmaNumber(value.content)
+        else -> canonicalNumber(value.content)
     }
 }
 
-private fun ecmaNumber(raw: String): String {
+private fun canonicalNumber(raw: String): String {
+    if (JSON_INTEGER.matches(raw)) {
+        val integer = BigDecimal(raw).stripTrailingZeros()
+        if (integer.signum() == 0) return "0"
+        return integer.toPlainString()
+    }
     val number = raw.toDoubleOrNull()?.takeIf { it.isFinite() }
         ?: throw SemanticFailure(SemanticFailureKind.DISCLOSURE_DENIED)
     if (number == 0.0) return "0"
@@ -570,12 +947,27 @@ private fun ecmaNumber(raw: String): String {
         return "${mantissa}e$sign$exponent"
     }
 
+    return scientificNumber(decimal)
+}
+
+private fun scientificNumber(decimal: BigDecimal): String {
     val digits = decimal.unscaledValue().abs().toString()
     val exponent = digits.length - decimal.scale() - 1
     val signPrefix = if (decimal.signum() < 0) "-" else ""
     val mantissa = if (digits.length == 1) digits else "${digits[0]}.${digits.drop(1)}"
     val exponentSign = if (exponent >= 0) "+" else ""
     return "$signPrefix${mantissa}e$exponentSign$exponent"
+}
+
+private object TargetWriters {
+    private val busy = ConcurrentHashMap<String, AtomicBoolean>()
+
+    fun tryAcquire(targetId: String): Boolean =
+        busy.computeIfAbsent(targetId) { AtomicBoolean(false) }.compareAndSet(false, true)
+
+    fun release(targetId: String) {
+        busy[targetId]?.set(false)
+    }
 }
 
 private object SemanticJsonSchema {

@@ -43,15 +43,18 @@ public struct SemanticProtocolPolicy: Sendable {
   public let discover: @Sendable (SemanticProtocolSessionContext, SemanticCapabilityItem) async throws -> Bool
   public let discloseSchema: @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool
   public let discloseResource: @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool
+  public let discloseAction: @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool
 
   public init(
     discover: @escaping @Sendable (SemanticProtocolSessionContext, SemanticCapabilityItem) async throws -> Bool,
     discloseSchema: @escaping @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool,
-    discloseResource: @escaping @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool
+    discloseResource: @escaping @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool,
+    discloseAction: @escaping @Sendable (SemanticProtocolSessionContext, SemanticCapabilityDeclaration) async throws -> Bool
   ) {
     self.discover = discover
     self.discloseSchema = discloseSchema
     self.discloseResource = discloseResource
+    self.discloseAction = discloseAction
   }
 }
 
@@ -180,17 +183,20 @@ public actor SemanticProtocolRuntime {
   private let catalog: SemanticCatalog
   private let limits: SemanticProtocolLimits
   private let policy: SemanticProtocolPolicy
+  private let actionCoordinator: TargetActionCoordinator
   private var sessions: [String: SessionRecord] = [:]
   private var cursors: [String: CursorRecord] = [:]
 
   public init(
     catalog: SemanticCatalog,
     limits: SemanticProtocolLimits,
-    policy: SemanticProtocolPolicy
+    policy: SemanticProtocolPolicy,
+    actionCoordinator: TargetActionCoordinator
   ) {
     self.catalog = catalog
     self.limits = limits
     self.policy = policy
+    self.actionCoordinator = actionCoordinator
   }
 
   /// Clears listener-epoch-bound protocol state while retaining the process Catalog.
@@ -272,9 +278,110 @@ public actor SemanticProtocolRuntime {
       return try await schema(requestID: requestID, session: session, params: params)
     case "semantic.query":
       return try await query(requestID: requestID, session: session, params: params)
+    case "semantic.invoke":
+      return try await invoke(requestID: requestID, session: session, params: params)
     default:
       throw WireFault.methodNotFound(method)
     }
+  }
+
+  private func invoke(
+    requestID: JSONValue,
+    session: SessionRecord,
+    params: [String: JSONValue]
+  ) async throws -> JSONValue {
+    try Self.requireExactKeys(
+      params,
+      allowed: ["capability", "declarationRevision", "inputSchema", "input", "authorizationGrant"]
+    )
+    guard params["capability"] != nil,
+      params["declarationRevision"] != nil,
+      params["inputSchema"] != nil,
+      params["input"] != nil
+    else { throw WireFault.invalidParams }
+    let capability = try Self.capability(params["capability"])
+    let revision = try Self.positiveInteger(params["declarationRevision"])
+    let handle = try Self.schemaHandle(params["inputSchema"])
+    let grant = params["authorizationGrant"].flatMap { Self.string($0, maximum: 256) }
+    if params["authorizationGrant"] != nil && (grant?.isEmpty ?? true) {
+      throw WireFault.invalidParams
+    }
+    let declaration = try await declaration(capability, revision: revision, context: session.context)
+    try ensureActive(session)
+    guard declaration.kind == .action else {
+      throw WireFault.capabilityNotFound(capability)
+    }
+    guard let inputSchema = declaration.inputSchema,
+      handle.matches(inputSchema)
+    else { throw WireFault.schemaMismatch(capability) }
+    guard (try? await policy.discloseAction(session.context, declaration)) == true else {
+      throw WireFault.disclosureDenied(capability)
+    }
+    try ensureActive(session)
+    do {
+      try await actionCoordinator.invoke(
+        SemanticActionInvocation(
+          capability: capability,
+          declarationRevision: revision,
+          inputSchema: inputSchema,
+          input: params["input"]!
+        ),
+        authorizationGrant: grant,
+        session: session.context,
+        sessionIsActive: { [weak self] in
+          guard let self else { return false }
+          return await self.isSessionActive(session.context)
+        }
+      )
+    } catch let error as TargetActionCoordinatorError {
+      switch error {
+      case .policyDenied:
+        throw WireFault(
+          code: -32024,
+          kind: "action.policyDenied",
+          message: "Action policy is denied",
+          retryable: false,
+          details: [
+            "capability": .string(capability),
+            "field": .string("authorizationGrant"),
+          ]
+        )
+      case .conflict:
+        throw WireFault(
+          code: -32025,
+          kind: "action.conflict",
+          message: "Action conflicts with an in-flight mutation",
+          retryable: false,
+          details: ["capability": .string(capability)]
+        )
+      case .outcomeUnknown:
+        throw WireFault(
+          code: -32026,
+          kind: "action.outcomeUnknown",
+          message: "Action outcome is unknown",
+          retryable: false,
+          details: ["capability": .string(capability)]
+        )
+      case .sessionExpired:
+        throw WireFault.sessionExpired
+      case .preDispatchFailed:
+        throw WireFault.internalError
+      }
+    } catch {
+      throw Self.map(error, capability: capability)
+    }
+    return Self.success(
+      requestID,
+      result: .object([
+        "capability": .string(capability),
+        "declarationRevision": .unsignedInteger(revision),
+        "completed": .bool(true),
+      ])
+    )
+  }
+
+  private func isSessionActive(_ context: SemanticProtocolSessionContext) -> Bool {
+    sessions[context.id]?.context == context
   }
 
   private func open(requestID: JSONValue, params: [String: JSONValue]) throws -> JSONValue {

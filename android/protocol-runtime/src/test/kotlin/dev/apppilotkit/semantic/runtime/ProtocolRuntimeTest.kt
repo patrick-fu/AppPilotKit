@@ -7,16 +7,23 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.apppilotkit.semantic.ActionPolicy
+import dev.apppilotkit.semantic.ActionEvidencePort
 import dev.apppilotkit.semantic.AuthorizationPolicy
 import dev.apppilotkit.semantic.CatalogIdentity
 import dev.apppilotkit.semantic.ClassificationStatus
+import dev.apppilotkit.semantic.DestructiveAuthorizationRequest
+import dev.apppilotkit.semantic.DestructiveAuthorizationValidator
 import dev.apppilotkit.semantic.EncodedSemanticValue
+import dev.apppilotkit.semantic.EffectiveActionPolicy
+import dev.apppilotkit.semantic.EffectiveActionPolicyResolver
 import dev.apppilotkit.semantic.RedactionStatus
 import dev.apppilotkit.semantic.RetrySafety
 import dev.apppilotkit.semantic.SemanticCodec
 import dev.apppilotkit.semantic.SemanticRegistry
 import dev.apppilotkit.semantic.SemanticRegistryBuilder
 import dev.apppilotkit.semantic.SemanticSchema
+import dev.apppilotkit.semantic.TargetActionContext
+import dev.apppilotkit.semantic.TargetActionCoordinator
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -85,6 +92,7 @@ class ProtocolRuntimeTest {
                 discover = { _, _ -> visible.get() },
                 discloseSchema = { _, _ -> true },
                 discloseResource = { _, _ -> true },
+                discloseAction = { _, _ -> true },
             ),
         )
         val context = response(runtime, open()).context()
@@ -102,6 +110,7 @@ class ProtocolRuntimeTest {
             discover = { _, declaration -> declaration.id != "hidden.config" },
             discloseSchema = { _, _ -> false },
             discloseResource = { _, _ -> false },
+            discloseAction = { _, _ -> false },
         )
         val runtime = runtime(registry(available = { available }), policy)
         val context = response(runtime, open()).context()
@@ -114,6 +123,7 @@ class ProtocolRuntimeTest {
                 discover = { _, declaration -> declaration.id != "config.current" },
                 discloseSchema = { _, _ -> true },
                 discloseResource = { _, _ -> true },
+                discloseAction = { _, _ -> true },
             ),
         )
         val hiddenSchemaContext = response(hiddenSchemaRuntime, open()).context()
@@ -131,13 +141,221 @@ class ProtocolRuntimeTest {
     }
 
     @Test
-    fun `query accepts resources only and invoke never reaches actions`() {
+    fun `query accepts resources only and destructive invoke is denied before dispatch`() {
         val actionCalls = AtomicInteger()
         val runtime = runtime(registry(actionCalls = actionCalls))
         val context = response(runtime, open()).context()
         assertEquals(-32020, response(runtime, request("semantic.query", context, "{\"capability\":\"account.delete\",\"declarationRevision\":1,\"valueSchema\":${handleJson(VALUE_SCHEMA)}}")).errorCode())
-        assertEquals(-32601, response(runtime, request("semantic.invoke", context, "{\"capability\":\"account.delete\",\"declarationRevision\":1,\"inputSchema\":${handleJson(INPUT_SCHEMA)},\"input\":\"secret\"}")).errorCode())
+        val denied = response(runtime, request("semantic.invoke", context, invokeParams()))
+        assertEquals(-32024, denied.errorCode())
+        assertEquals(
+            buildJsonObject {
+                put("capability", "account.delete")
+                put("field", "authorizationGrant")
+            },
+            denied["error"]!!.jsonObject["data"]!!.jsonObject["details"],
+        )
         assertEquals(0, actionCalls.get())
+    }
+
+    @Test
+    fun `invoke dispatches once only after discovery disclosure and destructive authorization`() {
+        val calls = AtomicInteger()
+        val runtime = runtime(registry(actionCalls = calls))
+        val context = response(runtime, open()).context()
+        val success = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+        assertEquals("true", success.result()["completed"]!!.jsonPrimitive.content)
+        assertEquals(1, calls.get())
+
+        val deniedDisclosure = runtime(
+            registry(actionCalls = calls),
+            SemanticProtocolPolicy(
+                discover = { _, _ -> true },
+                discloseSchema = { _, _ -> true },
+                discloseResource = { _, _ -> true },
+                discloseAction = { _, _ -> false },
+            ),
+        )
+        val deniedContext = response(deniedDisclosure, open()).context()
+        assertEquals(-32023, response(deniedDisclosure, request("semantic.invoke", deniedContext, invokeParams("grant-runtime"))).errorCode())
+        assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `disclosure allow does not authorize a policy denied action`() {
+        val calls = AtomicInteger()
+        val catalog = registry(actionCalls = calls)
+        val runtime = runtime(
+            catalog = catalog,
+            coordinator = coordinator(
+                catalog,
+                policyResolver = EffectiveActionPolicyResolver { _, _ ->
+                    EffectiveActionPolicy(AuthorizationPolicy.NONE, RetrySafety.RETRY_WITH_PROOF_ONLY)
+                },
+            ),
+        )
+        val context = response(runtime, open()).context()
+
+        val denied = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+        assertEquals(-32024, denied.errorCode())
+        assertEquals(
+            buildJsonObject {
+                put("capability", "account.delete")
+                put("field", "authorizationGrant")
+            },
+            denied["error"]!!.jsonObject["data"]!!.jsonObject["details"],
+        )
+        assertEquals(0, calls.get())
+    }
+
+    @Test
+    fun `pre-dispatch evidence failure maps to internal error without leaking input`() {
+        val calls = AtomicInteger()
+        val catalog = registry(actionCalls = calls)
+        val runtime = runtime(
+            catalog = catalog,
+            coordinator = coordinator(
+                catalog,
+                captureBefore = { throw IllegalStateException("lost before evidence") },
+            ),
+        )
+        val context = response(runtime, open()).context()
+
+        val result = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+        assertEquals(-32603, result.errorCode())
+        val error = result["error"]!!.jsonObject
+        assertEquals("internalError", error["data"]!!.jsonObject["kind"]!!.jsonPrimitive.content)
+        assertEquals("false", error["data"]!!.jsonObject["retryable"]!!.jsonPrimitive.content)
+        assertEquals(0, calls.get())
+        val encoded = Json.encodeToString(JsonObject.serializer(), result)
+        assertFalse(encoded.contains("sensitive-input"))
+        assertFalse(encoded.contains("grant-runtime"))
+    }
+
+    @Test
+    fun `post handoff failure is outcome unknown and never leaks action input`() {
+        val calls = AtomicInteger()
+        val runtime = runtime(registry(actionCalls = calls, action = {
+            calls.incrementAndGet()
+            throw IllegalStateException("handler failure")
+        }))
+        val context = response(runtime, open()).context()
+        val result = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+        assertEquals(-32026, result.errorCode())
+        assertEquals(setOf("jsonrpc", "id", "error"), result.keys)
+        val error = result["error"]!!.jsonObject
+        assertEquals(setOf("code", "message", "data"), error.keys)
+        assertEquals("Action outcome is unknown", error["message"]!!.jsonPrimitive.content)
+        val errorData = error["data"]!!.jsonObject
+        assertEquals(setOf("kind", "retryable", "details"), errorData.keys)
+        assertEquals("action.outcomeUnknown", errorData["kind"]!!.jsonPrimitive.content)
+        assertEquals("false", errorData["retryable"]!!.jsonPrimitive.content)
+        assertEquals(
+            buildJsonObject { put("capability", "account.delete") },
+            errorData["details"]!!.jsonObject,
+        )
+        assertEquals(1, calls.get())
+        assertFalse(Json.encodeToString(JsonObject.serializer(), result).contains("sensitive-input"))
+        assertFalse(Json.encodeToString(JsonObject.serializer(), result).contains("grant-runtime"))
+    }
+
+    @Test
+    fun `single writer rejects competing invoke without queueing`() {
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val heldGrant = AtomicBoolean(false)
+        val competingGrant = AtomicBoolean(false)
+        val catalog = registry(
+            actionCalls = calls,
+            action = {
+                calls.incrementAndGet()
+                started.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            },
+        )
+        val coordinator = catalog.targetActionCoordinator(
+            targetId = "target_runtimefixture",
+            policyResolver = EffectiveActionPolicyResolver { _, declaration ->
+                EffectiveActionPolicy(declaration.authorization, declaration.retrySafety)
+            },
+            destructiveAuthorizationValidator = object : DestructiveAuthorizationValidator {
+                override fun validate(request: DestructiveAuthorizationRequest) = when (request.grant) {
+                    "grant-hold" -> !heldGrant.get()
+                    "grant-runtime" -> !competingGrant.get()
+                    else -> false
+                }
+
+                override fun consume(request: DestructiveAuthorizationRequest) =
+                    when (request.grant) {
+                        "grant-hold" -> heldGrant.compareAndSet(false, true)
+                        "grant-runtime" -> competingGrant.compareAndSet(false, true)
+                        else -> false
+                    }
+            },
+            evidence = object : ActionEvidencePort {
+                override fun captureBefore(context: TargetActionContext) = Unit
+                override fun observeStability(context: TargetActionContext) = Unit
+                override fun captureAfter(context: TargetActionContext) = Unit
+            },
+        )
+        val runtime = runtime(catalog = catalog, coordinator = coordinator)
+        val context = response(runtime, open()).context()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val first = executor.submit<JsonObject> {
+                response(runtime, request("semantic.invoke", context, invokeParams("grant-hold")))
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            val competing = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+            assertEquals(-32025, competing.errorCode())
+            assertEquals(1, calls.get())
+            assertTrue(heldGrant.get())
+            assertFalse(competingGrant.get())
+            release.countDown()
+            assertEquals("true", first.get(5, TimeUnit.SECONDS).result()["completed"]!!.jsonPrimitive.content)
+            val completed = response(runtime, request("semantic.invoke", context, invokeParams("grant-runtime")))
+            assertEquals("true", completed.result()["completed"]!!.jsonPrimitive.content)
+            assertEquals(2, calls.get())
+            assertTrue(competingGrant.get())
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `listener invalidation is session expired before dispatch and outcome unknown after handoff`() {
+        val beforeCalls = AtomicInteger()
+        val before = runtime(registry(actionCalls = beforeCalls))
+        val beforeContext = response(before, open()).context()
+        before.invalidateSessions()
+        assertEquals(-32002, response(before, request("semantic.invoke", beforeContext, invokeParams("grant-runtime"))).errorCode())
+        assertEquals(0, beforeCalls.get())
+
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val afterCalls = AtomicInteger()
+        val after = runtime(registry(actionCalls = afterCalls, action = {
+            afterCalls.incrementAndGet()
+            started.countDown()
+            release.await(5, TimeUnit.SECONDS)
+        }))
+        val afterContext = response(after, open()).context()
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val result = executor.submit<JsonObject> {
+                response(after, request("semantic.invoke", afterContext, invokeParams("grant-runtime")))
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            after.invalidateSessions()
+            release.countDown()
+            assertEquals(-32026, result.get(5, TimeUnit.SECONDS).errorCode())
+            assertEquals(1, afterCalls.get())
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
     }
 
     @Test
@@ -199,12 +417,14 @@ class ProtocolRuntimeTest {
     private fun runtime(
         catalog: SemanticRegistry,
         policy: SemanticProtocolPolicy = allowAllPolicy(),
-    ) = ProtocolRuntime(catalog, ProtocolRuntimeLimits(1_024, 4_096, 4), policy)
+        coordinator: TargetActionCoordinator = coordinator(catalog),
+    ) = ProtocolRuntime(catalog, ProtocolRuntimeLimits(1_024, 4_096, 4), policy, coordinator, "target_runtimefixture")
 
     private fun registry(
         query: () -> String = { "current" },
         available: () -> Boolean = { true },
         actionCalls: AtomicInteger = AtomicInteger(),
+        action: () -> Unit = { actionCalls.incrementAndGet() },
     ): SemanticRegistry = SemanticRegistryBuilder()
         .registerResource("config.current", 1, StringCodec(VALUE_SCHEMA), available, query)
         .registerResource("hidden.config", 1, StringCodec(VALUE_SCHEMA)) { "hidden" }
@@ -213,13 +433,36 @@ class ProtocolRuntimeTest {
             1,
             StringCodec(INPUT_SCHEMA),
             ActionPolicy(AuthorizationPolicy.DESTRUCTIVE_AUTHORIZATION, RetrySafety.NO_AUTOMATIC_RETRY),
-        ) { actionCalls.incrementAndGet() }
+        ) { action() }
         .freeze(CatalogIdentity("catalog_runtimefixture", 7), 4_096)
 
     private fun allowAllPolicy() = SemanticProtocolPolicy(
         discover = { _, _ -> true },
         discloseSchema = { _, _ -> true },
         discloseResource = { _, _ -> true },
+        discloseAction = { _, _ -> true },
+    )
+
+    private fun coordinator(
+        catalog: SemanticRegistry,
+        grants: AtomicBoolean = AtomicBoolean(false),
+        policyResolver: EffectiveActionPolicyResolver = EffectiveActionPolicyResolver { _, declaration ->
+            EffectiveActionPolicy(declaration.authorization, declaration.retrySafety)
+        },
+        captureBefore: (TargetActionContext) -> Unit = {},
+    ): TargetActionCoordinator = catalog.targetActionCoordinator(
+        targetId = "target_runtimefixture",
+        policyResolver = policyResolver,
+        destructiveAuthorizationValidator = object : DestructiveAuthorizationValidator {
+            override fun validate(request: DestructiveAuthorizationRequest) = request.grant == "grant-runtime"
+            override fun consume(request: DestructiveAuthorizationRequest) =
+                request.grant == "grant-runtime" && grants.compareAndSet(false, true)
+        },
+        evidence = object : ActionEvidencePort {
+            override fun captureBefore(context: TargetActionContext) = captureBefore(context)
+            override fun observeStability(context: TargetActionContext) = Unit
+            override fun captureAfter(context: TargetActionContext) = Unit
+        },
     )
 
     private fun open(minMinor: Int = 2, maxMinor: Int = 2, semantic: Boolean = true): String =
@@ -232,6 +475,13 @@ class ProtocolRuntimeTest {
         Json.parseToJsonElement(String(runtime.handle(request.toByteArray(StandardCharsets.UTF_8)), StandardCharsets.UTF_8)).jsonObject
 
     private fun queryParams() = "{\"capability\":\"config.current\",\"declarationRevision\":1,\"valueSchema\":${handleJson(VALUE_SCHEMA)}}"
+    private fun invokeParams(grant: String? = null) = buildString {
+        append("{\"capability\":\"account.delete\",\"declarationRevision\":1,\"inputSchema\":")
+        append(handleJson(INPUT_SCHEMA))
+        append(",\"input\":\"sensitive-input\"")
+        grant?.let { append(",\"authorizationGrant\":\"$it\"") }
+        append("}")
+    }
     private fun handleJson(schema: SemanticSchema) = Json.encodeToString(JsonObject.serializer(), buildJsonObject {
         put("id", schema.handle.id)
         put("revision", schema.handle.revision)

@@ -146,7 +146,7 @@ public struct SemanticSchemaHandle: Codable, Equatable, Hashable, Sendable {
   public let revision: UInt64
   public let digest: String
 
-  fileprivate init(id: String, revision: UInt64, digest: String) {
+  init(id: String, revision: UInt64, digest: String) {
     self.id = id
     self.revision = revision
     self.digest = digest
@@ -168,17 +168,16 @@ public struct SemanticSchema: Equatable, Sendable {
       throw SemanticCatalogError.invalidSchema
     }
     try SemanticJSONSchema.validateDocument(document)
-    let bytes: Data
     do {
-      bytes = try SemanticValidation.canonicalData(for: document)
+      _ = try SemanticValidation.canonicalData(for: document)
     } catch {
       throw SemanticCatalogError.invalidSchema
     }
-    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    let digest = try SemanticCatalog.canonicalDigest(for: document)
     self.handle = SemanticSchemaHandle(
       id: id,
       revision: revision,
-      digest: "sha256:\(digest)"
+      digest: digest
     )
     self.document = document
   }
@@ -305,7 +304,7 @@ private struct AnySemanticAction: Sendable {
   let declaration: SemanticCapabilityDeclaration
   let schemas: [SemanticSchema]
   let availability: @Sendable () async throws -> Bool
-  let prepare: @Sendable (JSONValue) throws -> PreparedSemanticAction
+  let validate: @Sendable (JSONValue, TargetActionContext) throws -> ValidatedSemanticAction
 }
 
 private enum AnySemanticCapability: Sendable {
@@ -461,9 +460,19 @@ public final class SemanticCatalogBuilder {
         declaration: declaration,
         schemas: [input.schema],
         availability: availability,
-        prepare: { rawInput in
+        validate: { rawInput, context in
           let typedInput = try Self.decode(rawInput, with: input)
-          return PreparedSemanticAction(declaration: declaration) {
+          let digest = try SemanticCatalog.canonicalDigest(for: rawInput)
+          let binding = CanonicalActionBinding(
+            targetID: context.targetID,
+            processGeneration: context.processGeneration,
+            sessionID: context.sessionID,
+            capability: declaration.id,
+            declarationRevision: declaration.declarationRevision,
+            inputSchema: input.schema.handle,
+            inputDigest: digest
+          )
+          return ValidatedSemanticAction(declaration: declaration, binding: binding) {
             do {
               try await handler(typedInput)
             } catch is CancellationError {
@@ -620,6 +629,12 @@ public struct SemanticCatalog: Sendable {
       .sorted { $0.id < $1.id }
   }
 
+  static func canonicalDigest(for value: JSONValue) throws -> String {
+    let bytes = try SemanticValidation.canonicalData(for: value)
+    let digest = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    return "sha256:\(digest)"
+  }
+
   public func declaration(for id: String) throws -> SemanticCapabilityDeclaration {
     guard let capability = registrations[id] else {
       throw SemanticCatalogError.capabilityNotFound
@@ -690,9 +705,12 @@ public struct SemanticCatalog: Sendable {
     return try await resource.query(request.input, maximumOutputBytes)
   }
 
-  /// Internal preparation seam for the future Target Action Coordinator.
-  /// Only that coordinator may dispatch the returned typed invocation.
-  func prepareAction(_ request: SemanticActionInvocation) async throws -> PreparedSemanticAction {
+  /// Validates and binds an action to the exact Target/session/input. Dispatch remains
+  /// unavailable until the coordinator presents its internal authority token.
+  func validateAction(
+    _ request: SemanticActionInvocation,
+    context: TargetActionContext
+  ) async throws -> ValidatedSemanticAction {
     guard let capability = registrations[request.capability] else {
       throw SemanticCatalogError.capabilityNotFound
     }
@@ -716,24 +734,58 @@ public struct SemanticCatalog: Sendable {
     } catch {
       throw SemanticCatalogError.unavailable
     }
-    return try action.prepare(request.input)
+    return try action.validate(request.input, context)
+  }
+
+  func claimDispatch(
+    _ validated: ValidatedSemanticAction,
+    authority: DispatchAuthority
+  ) -> DispatchClaim {
+    DispatchClaim(handler: validated.claimHandler, authority: authority)
   }
 }
 
-struct PreparedSemanticAction: Sendable {
+public struct CanonicalActionBinding: Equatable, Sendable {
+  public let targetID: String
+  public let processGeneration: UInt64
+  public let sessionID: String
+  public let capability: String
+  public let declarationRevision: UInt64
+  public let inputSchema: SemanticSchemaHandle
+  public let inputDigest: String
+
+  init(
+    targetID: String,
+    processGeneration: UInt64,
+    sessionID: String,
+    capability: String,
+    declarationRevision: UInt64,
+    inputSchema: SemanticSchemaHandle,
+    inputDigest: String
+  ) {
+    self.targetID = targetID
+    self.processGeneration = processGeneration
+    self.sessionID = sessionID
+    self.capability = capability
+    self.declarationRevision = declarationRevision
+    self.inputSchema = inputSchema
+    self.inputDigest = inputDigest
+  }
+}
+
+struct ValidatedSemanticAction: Sendable {
   let declaration: SemanticCapabilityDeclaration
-  private let dispatchHandler: @Sendable () async throws -> Void
+  let binding: CanonicalActionBinding
+  fileprivate let claimHandler: @Sendable () async throws -> Void
 
   fileprivate init(
     declaration: SemanticCapabilityDeclaration,
-    dispatch: @escaping @Sendable () async throws -> Void
+    binding: CanonicalActionBinding,
+    handler: @escaping @Sendable () async throws -> Void
   ) {
     self.declaration = declaration
-    self.dispatchHandler = dispatch
-  }
-
-  func dispatch() async throws {
-    try await dispatchHandler()
+    self.binding = binding
+    self.claimHandler = handler
   }
 }
 
@@ -782,9 +834,9 @@ private enum SemanticValidation {
     case .bool(let value):
       return value ? "true" : "false"
     case .integer(let value):
-      return try ecmaNumber(Double(value))
+      return String(value)
     case .unsignedInteger(let value):
-      return try ecmaNumber(Double(value))
+      return String(value)
     case .number(let value):
       return try ecmaNumber(value)
     case .string(let value):
