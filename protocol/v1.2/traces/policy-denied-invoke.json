@@ -1,0 +1,1 @@
+{"kind":"contractTrace","events":["requestReceived","policyEvaluated","rejectedBeforeDispatch"],"dispatch":{"resourceQuery":0,"actionCoordinator":0,"mutation":0},"retry":{"suppressed":true}}

@@ -10,7 +10,7 @@ const protocolDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const protocolVersions = ["v1", "v1.1"];
+const protocolVersions = ["v1", "v1.1", "v1.2"];
 
 const semanticChecks = {
   versionRange(message) {
@@ -25,6 +25,21 @@ const semanticChecks = {
   },
   inspectResult(message) {
     return validInspectResult(message);
+  },
+  catalogPage(message) {
+    return validCatalogPage(message);
+  },
+  queryBytes(message) {
+    return (
+      message.result.bytes === Buffer.byteLength(JSON.stringify(message.result.value), "utf8")
+    );
+  },
+  async withinNegotiatedBytes(message, contractCase, fixtureDirectory) {
+    const session = await readJson(path.join(fixtureDirectory, contractCase.sessionFixture));
+    const maxBytes = message.method
+      ? session.result.limits.maxRequestBytes
+      : session.result.limits.maxResponseBytes;
+    return Buffer.byteLength(JSON.stringify(message), "utf8") <= maxBytes;
   },
 };
 
@@ -71,6 +86,17 @@ function validPage(message, nodes, page) {
   return (
     page.returnedItems === nodes.length &&
     page.returnedItems <= page.appliedLimits.maxItems &&
+    Buffer.byteLength(JSON.stringify(message), "utf8") <= page.appliedLimits.maxBytes
+  );
+}
+
+function validCatalogPage(message) {
+  const { capabilities, page } = message.result;
+  const capabilityIds = capabilities.map((capability) => capability.id);
+  return (
+    page.returnedItems === capabilities.length &&
+    page.returnedItems <= page.appliedLimits.maxItems &&
+    new Set(capabilityIds).size === capabilities.length &&
     Buffer.byteLength(JSON.stringify(message), "utf8") <= page.appliedLimits.maxBytes
   );
 }
@@ -377,6 +403,223 @@ async function validPaginationExchange(exchange, fixtureDirectory) {
   );
 }
 
+async function validSemanticCase(semanticCase, fixtureDirectory) {
+  const readFixture = (fixture) => readJson(path.join(fixtureDirectory, fixture));
+  const validSession = (request, response, requiresSemantic = true) =>
+    request.id === response.id &&
+    response.result.protocol.major === 1 &&
+    response.result.protocol.minor === 2 &&
+    (!requiresSemantic || response.result.capabilities.includes("semantic.catalog"));
+  const validError = (request, response, expected) =>
+    response.id === request.id &&
+    response.error.code === expected.code &&
+    response.error.data.kind === expected.kind &&
+    response.error.data.retryable === expected.retryable;
+  const validTrace = (trace, expected) =>
+    trace.kind === "contractTrace" &&
+    expected.events.every((event) => trace.events.includes(event)) &&
+    Object.entries(expected.dispatch).every(
+      ([name, count]) => trace.dispatch[name] === count,
+    ) &&
+    (expected.retrySuppressed === undefined || trace.retry.suppressed === expected.retrySuppressed);
+
+  if (semanticCase.cursorFailure) {
+    const initialRequest = await readFixture(semanticCase.initialRequest);
+    const initialResponse = await readFixture(semanticCase.initialResponse);
+    const continuationRequest = await readFixture(semanticCase.continuationRequest);
+    const response = await readFixture(semanticCase.expectedError);
+    const trace = await readJson(path.join(protocolDirectory, "v1.2", semanticCase.trace));
+    const failedBinding = semanticCase.failedBinding;
+    return (
+      initialRequest.method === "semantic.list" &&
+      continuationRequest.method === initialRequest.method &&
+      initialResponse.id === initialRequest.id &&
+      initialResponse.result.page.nextCursor &&
+      response.id === continuationRequest.id &&
+      response.error.code === semanticCase.error.code &&
+      response.error.data.kind === semanticCase.error.kind &&
+      trace.kind === "contractTrace" &&
+      trace.events.includes("cursorRejected") &&
+      trace.bindings[failedBinding] === true &&
+      Object.entries(trace.dispatch).every(([, count]) => count === 0)
+    );
+  }
+  if (semanticCase.initialRequest) {
+    const initialRequest = await readFixture(semanticCase.initialRequest);
+    const initialResponse = await readFixture(semanticCase.initialResponse);
+    const continuationRequest = await readFixture(semanticCase.continuationRequest);
+    const finalResponse = await readFixture(semanticCase.finalResponse);
+    const allItems = [
+      ...initialResponse.result.capabilities,
+      ...finalResponse.result.capabilities,
+    ];
+    const itemKeys = allItems.map(
+      (item) => `${item.id}:${item.kind}:${item.declarationRevision}`,
+    );
+    return (
+      initialRequest.method === "semantic.list" &&
+      continuationRequest.method === initialRequest.method &&
+      sameJson(continuationRequest.context, initialRequest.context) &&
+      sameJson(initialResponse.result.catalog, finalResponse.result.catalog) &&
+      initialResponse.result.catalog.generation === initialRequest.context.generation &&
+      initialResponse.id === initialRequest.id &&
+      finalResponse.id === continuationRequest.id &&
+      initialResponse.result.page.truncated === true &&
+      continuationRequest.params.cursor === initialResponse.result.page.nextCursor &&
+      Object.keys(continuationRequest.params).join(",") === "cursor" &&
+      finalResponse.result.page.truncated === false &&
+      new Set(itemKeys).size === allItems.length
+    );
+  }
+
+  if (semanticCase.schemaEvolution) {
+    const validSchemaPath = async (prefix) => {
+      const sessionRequest = await readFixture(semanticCase[`${prefix}SessionRequest`]);
+      const sessionResponse = await readFixture(semanticCase[`${prefix}SessionResponse`]);
+      const declarationRequest = await readFixture(semanticCase[`${prefix}DeclarationRequest`]);
+      const declarationResponse = await readFixture(semanticCase[`${prefix}DeclarationResponse`]);
+      const schemaRequest = await readFixture(semanticCase[`${prefix}SchemaRequest`]);
+      const schemaResponse = await readFixture(semanticCase[`${prefix}SchemaResponse`]);
+      return (
+        validSession(sessionRequest, sessionResponse) &&
+        sameJson(declarationRequest.context, sessionResponse.result.context) &&
+        declarationRequest.id === declarationResponse.id &&
+        declarationRequest.params.capability === declarationResponse.result.id &&
+        declarationRequest.params.declarationRevision === declarationResponse.result.declarationRevision &&
+        sameJson(schemaRequest.context, sessionResponse.result.context) &&
+        schemaRequest.id === schemaResponse.id &&
+        schemaRequest.params.capability === declarationResponse.result.id &&
+        schemaRequest.params.declarationRevision === declarationResponse.result.declarationRevision &&
+        sameJson(schemaRequest.params.schema, declarationResponse.result.valueSchema) &&
+        sameJson(schemaResponse.result.schema, schemaRequest.params.schema)
+      );
+    };
+    const initialValid = await validSchemaPath("initial");
+    const evolvedValid = await validSchemaPath("evolved");
+    const initialDeclaration = await readFixture(semanticCase.initialDeclarationResponse);
+    const evolvedDeclaration = await readFixture(semanticCase.evolvedDeclarationResponse);
+    const initialSchema = await readFixture(semanticCase.initialSchemaResponse);
+    const evolvedSchema = await readFixture(semanticCase.evolvedSchemaResponse);
+    return (
+      initialValid &&
+      evolvedValid &&
+      initialDeclaration.result.id === evolvedDeclaration.result.id &&
+      evolvedDeclaration.result.declarationRevision > initialDeclaration.result.declarationRevision &&
+      initialSchema.result.schema.id === evolvedSchema.result.schema.id &&
+      evolvedSchema.result.schema.revision > initialSchema.result.schema.revision &&
+      !sameJson(initialSchema.result.document, evolvedSchema.result.document)
+    );
+  }
+
+  if (semanticCase.schemaHandleMismatch) {
+    const sessionRequest = await readFixture(semanticCase.sessionRequest);
+    const sessionResponse = await readFixture(semanticCase.sessionResponse);
+    const declarationRequest = await readFixture(semanticCase.declarationRequest);
+    const declarationResponse = await readFixture(semanticCase.declarationResponse);
+    const schemaRequest = await readFixture(semanticCase.schemaRequest);
+    const schemaResponse = await readFixture(semanticCase.schemaResponse);
+    return (
+      validSession(sessionRequest, sessionResponse) &&
+      sameJson(declarationRequest.context, sessionResponse.result.context) &&
+      declarationRequest.id === declarationResponse.id &&
+      sameJson(schemaRequest.context, sessionResponse.result.context) &&
+      schemaRequest.id === schemaResponse.id &&
+      sameJson(schemaRequest.params.schema, declarationResponse.result.valueSchema) &&
+      sameJson(schemaResponse.result.schema, schemaRequest.params.schema)
+    );
+  }
+
+  if (semanticCase.operation) {
+    const sessionRequest = await readFixture(semanticCase.sessionRequest);
+    const sessionResponse = await readFixture(semanticCase.sessionResponse);
+    const request = await readFixture(semanticCase.request);
+    const response = await readFixture(semanticCase.response);
+    const trace = await readJson(path.join(protocolDirectory, "v1.2", semanticCase.trace));
+    const hasSession = validSession(
+      sessionRequest,
+      sessionResponse,
+      semanticCase.requiresSemantic !== false,
+    );
+    const contextMatches = sameJson(request.context, sessionResponse.result.context);
+    if (semanticCase.expectedError) {
+      return (
+        hasSession &&
+        contextMatches &&
+        request.method === semanticCase.operation &&
+        validError(request, response, semanticCase.expectedError) &&
+        validTrace(trace, semanticCase.traceExpectation)
+      );
+    }
+    const declarationRequest = await readFixture(semanticCase.declarationRequest);
+    const declarationResponse = await readFixture(semanticCase.declarationResponse);
+    const declaration = declarationResponse.result;
+    const declarationMatches =
+      sameJson(declarationRequest.context, sessionResponse.result.context) &&
+      declarationRequest.id === declarationResponse.id &&
+      declarationRequest.params.capability === declaration.id &&
+      declarationRequest.params.declarationRevision === declaration.declarationRevision &&
+      request.params.capability === declaration.id &&
+      request.params.declarationRevision === declaration.declarationRevision;
+    const resultMatches =
+      response.id === request.id &&
+      (semanticCase.operation === "semantic.query"
+        ? sameJson(response.result.valueSchema, request.params.valueSchema) &&
+          response.result.bytes === Buffer.byteLength(JSON.stringify(response.result.value), "utf8")
+        : response.result.capability === request.params.capability &&
+          response.result.declarationRevision === request.params.declarationRevision &&
+          response.result.completed === true);
+    return (
+      hasSession &&
+      contextMatches &&
+      request.method === semanticCase.operation &&
+      declarationMatches &&
+      declaration.kind === semanticCase.expectedKind &&
+      resultMatches &&
+      validTrace(trace, semanticCase.traceExpectation)
+    );
+  }
+  return false;
+}
+
+async function validSemanticFailureEvidence(semanticCase, fixtureDirectory) {
+  const readFixture = (fixture) => readJson(path.join(fixtureDirectory, fixture));
+  if (semanticCase.cursorFailure) {
+    const continuationRequest = await readFixture(semanticCase.continuationRequest);
+    const response = await readFixture(semanticCase.expectedError);
+    const trace = await readJson(path.join(protocolDirectory, "v1.2", semanticCase.trace));
+    return (
+      response.id === continuationRequest.id &&
+      response.error.code === semanticCase.error.code &&
+      response.error.data.kind === semanticCase.error.kind &&
+      response.error.data.retryable === false &&
+      trace.events.includes("cursorRejected") &&
+      trace.bindings[semanticCase.failedBinding] === false &&
+      Object.values(trace.dispatch).every((count) => count === 0)
+    );
+  }
+  if (semanticCase.schemaHandleMismatch) {
+    const declaration = await readFixture(semanticCase.declarationResponse);
+    const request = await readFixture(semanticCase.schemaRequest);
+    const response = await readFixture(semanticCase.schemaResponse);
+    return (
+      sameJson(request.params.schema, declaration.result.valueSchema) &&
+      !sameJson(response.result.schema, request.params.schema)
+    );
+  }
+  if (semanticCase.operation) {
+    const request = await readFixture(semanticCase.request);
+    const response = await readFixture(semanticCase.response);
+    const declaration = await readFixture(semanticCase.declarationResponse);
+    return (
+      request.id === response.id &&
+      request.params.capability === declaration.result.id &&
+      request.params.declarationRevision === declaration.result.declarationRevision &&
+      declaration.result.kind !== semanticCase.expectedKind
+    );
+  }
+  return false;
+}
+
 async function createValidator() {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   for (const version of protocolVersions) {
@@ -430,7 +673,9 @@ async function runFixtureCases(version, suite, ajv) {
           `semantic-invalid fixture must pass its schema: ${contractCase.fixture}`,
         );
       }
-      const semanticValid = semanticCheck ? semanticCheck(fixture) : true;
+      const semanticValid = semanticCheck
+        ? await semanticCheck(fixture, contractCase, fixtureDirectory)
+        : true;
       const request = contractCase.requestFixture
         ? await readJson(path.join(fixtureDirectory, contractCase.requestFixture))
         : undefined;
@@ -493,6 +738,26 @@ test("v1.1 pagination exchanges", async (suite) => {
         await validPaginationExchange(paginationCase, fixtureDirectory),
         paginationCase.valid,
       );
+    });
+  }
+});
+
+test("v1.2 semantic cross-message invariants", async (suite) => {
+  const fixtureDirectory = path.join(protocolDirectory, "v1.2", "fixtures");
+  const cases = await readJson(path.join(protocolDirectory, "v1.2", "semantic-cases.json"));
+  for (const semanticCase of cases) {
+    await suite.test(semanticCase.name, async () => {
+      assert.equal(
+        await validSemanticCase(semanticCase, fixtureDirectory),
+        semanticCase.valid,
+      );
+      if (!semanticCase.valid) {
+        assert.equal(
+          await validSemanticFailureEvidence(semanticCase, fixtureDirectory),
+          true,
+          "negative semantic case must preserve its expected fail-closed evidence",
+        );
+      }
     });
   }
 });

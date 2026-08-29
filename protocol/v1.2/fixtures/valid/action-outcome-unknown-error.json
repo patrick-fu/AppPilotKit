@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"invoke-unknown","error":{"code":-32026,"message":"Action outcome is unknown","data":{"kind":"action.outcomeUnknown","retryable":false,"details":{"capability":"account.delete"}}}}

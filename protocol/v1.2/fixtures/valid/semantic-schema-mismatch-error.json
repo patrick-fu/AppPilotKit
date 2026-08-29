@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"query-stale","error":{"code":-32021,"message":"Semantic schema does not match","data":{"kind":"semantic.schemaMismatch","retryable":false,"details":{"capability":"config.current","declarationRevision":1,"field":"valueSchema"}}}}

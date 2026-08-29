@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"invoke-conflict","error":{"code":-32025,"message":"Action conflicts with an in-flight mutation","data":{"kind":"action.conflict","retryable":false,"details":{"capability":"account.delete"}}}}

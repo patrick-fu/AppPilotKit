@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"open-semantic","result":{"context":{"id":"session_0123456789abcdef","generation":7},"protocol":{"major":1,"minor":2},"capabilities":["session.core","ui.snapshot","ui.inspect","semantic.catalog"],"limits":{"maxRequestBytes":4096,"maxResponseBytes":4096,"maxPageItems":2}}}

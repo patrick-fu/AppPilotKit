@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"show-action-output","result":{"id":"account.delete","kind":"action","declarationRevision":3,"inputSchema":{"id":"schema_action0001","revision":1,"digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"policy":{"authorization":"destructiveAuthorization","retrySafety":"retryWithProofOnly"},"output":{"deleted":true}}}

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"invoke-1","error":{"code":-32003,"message":"Capability unavailable","data":{"kind":"capabilityUnavailable","retryable":false}}}

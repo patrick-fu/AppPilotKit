@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"query-extra","method":"semantic.query","context":{"id":"session_0123456789abcdef","generation":7},"params":{"capability":"config.current","declarationRevision":1,"valueSchema":{"id":"schema_value0001","revision":1,"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"businessFilter":"must-not-exist"}}

@@ -1,0 +1,1 @@
+{"kind":"contractTrace","bindings":{"session":true,"generation":true,"method":true,"originalParams":true,"catalog":false,"cursor":true},"events":["cursorRejected"],"dispatch":{"resourceQuery":0,"actionCoordinator":0,"mutation":0}}

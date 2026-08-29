@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"schema-1","method":"semantic.schema","context":{"id":"session_0123456789abcdef","generation":7},"params":{"capability":"config.current","declarationRevision":1,"schema":{"id":"schema_value0001","revision":1,"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}}

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"invoke-output","result":{"capability":"account.delete","declarationRevision":3,"completed":true,"output":{"deleted":true}}}

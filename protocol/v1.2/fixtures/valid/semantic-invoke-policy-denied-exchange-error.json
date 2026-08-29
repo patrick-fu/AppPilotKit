@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"invoke-1","error":{"code":-32024,"message":"Action policy is denied","data":{"kind":"action.policyDenied","retryable":false,"details":{"capability":"account.delete","field":"authorizationGrant"}}}}
