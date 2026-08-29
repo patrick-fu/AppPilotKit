@@ -44,7 +44,7 @@ final class SemanticProtocolRuntimeTests: XCTestCase {
       runtime,
       request("semantic.invoke", context: semantic.context, params: [:])
     )
-    XCTAssertEqual(errorKind(invoke), "methodNotFound")
+    XCTAssertEqual(errorKind(invoke), "invalidParams")
 
     let invalidCapability = try await call(
       runtime,
@@ -122,6 +122,155 @@ final class SemanticProtocolRuntimeTests: XCTestCase {
     )
     let invocationCount = await counter.value
     XCTAssertEqual(invocationCount, 0)
+  }
+
+  func testInvokeRequiresFreshDisclosurePolicyAndDestructiveAuthorization() async throws {
+    let actionCounter = InvocationCounter()
+    let runtime = try makeRuntime(actionCounter: actionCounter)
+    let session = try await open(runtime, required: ["semantic.catalog"])
+    let actionDeclaration = try await declaration(
+      from: runtime,
+      context: session.context,
+      id: "account.delete"
+    )
+    let base: [String: JSONValue] = [
+      "capability": .string("account.delete"),
+      "declarationRevision": .unsignedInteger(actionDeclaration.declarationRevision),
+      "inputSchema": actionDeclaration.inputSchema!,
+      "input": .object(["confirm": .bool(true)]),
+    ]
+
+    let denied = try await call(
+      runtime,
+      request("semantic.invoke", context: session.context, params: base)
+    )
+    assertError(
+      denied,
+      code: -32024,
+      kind: "action.policyDenied",
+      message: "Action policy is denied",
+      retryable: false
+    )
+    XCTAssertEqual(
+      object(object(object(denied)?["error"])?["data"])?["details"],
+      .object([
+        "capability": .string("account.delete"),
+        "field": .string("authorizationGrant"),
+      ])
+    )
+    var actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 0)
+
+    var authorized = base
+    authorized["authorizationGrant"] = .string("grant")
+    let completed = try await call(
+      runtime,
+      request("semantic.invoke", context: session.context, params: authorized)
+    )
+    XCTAssertEqual(result(completed, "capability"), .string("account.delete"))
+    XCTAssertEqual(result(completed, "completed"), .bool(true))
+    actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 1)
+
+    var extra = authorized
+    extra["secret-extra"] = .string("must-not-leak")
+    let invalid = try await call(
+      runtime,
+      request("semantic.invoke", context: session.context, params: extra)
+    )
+    XCTAssertEqual(errorKind(invalid), "invalidParams")
+    XCTAssertFalse(encoded(invalid).contains("must-not-leak"))
+    actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 1)
+
+    let resource = try await declaration(
+      from: runtime,
+      context: session.context,
+      id: "config.current"
+    )
+    let wrongKind = try await call(
+      runtime,
+      request(
+        "semantic.invoke",
+        context: session.context,
+        params: [
+          "capability": .string("config.current"),
+          "declarationRevision": .unsignedInteger(resource.declarationRevision),
+          "inputSchema": actionDeclaration.inputSchema!,
+          "input": .object(["confirm": .bool(true)]),
+        ]
+      )
+    )
+    XCTAssertEqual(errorKind(wrongKind), "semantic.capabilityNotFound")
+    actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 1)
+
+    let disclosureDenied = try makeRuntime(
+      actionCounter: actionCounter,
+      actionAllowed: false
+    )
+    let deniedSession = try await open(disclosureDenied, required: ["semantic.catalog"])
+    let deniedDeclaration = try await declaration(
+      from: disclosureDenied,
+      context: deniedSession.context,
+      id: "account.delete"
+    )
+    let disclosureResponse = try await call(
+      disclosureDenied,
+      request(
+        "semantic.invoke",
+        context: deniedSession.context,
+        params: [
+          "capability": .string("account.delete"),
+          "declarationRevision": .unsignedInteger(deniedDeclaration.declarationRevision),
+          "inputSchema": deniedDeclaration.inputSchema!,
+          "input": .object(["confirm": .bool(true)]),
+          "authorizationGrant": .string("grant"),
+        ]
+      )
+    )
+    XCTAssertEqual(errorKind(disclosureResponse), "semantic.disclosureDenied")
+    actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 1)
+  }
+
+  func testInvokeHandlerFailureIsOutcomeUnknownAndSafe() async throws {
+    let actionCounter = InvocationCounter()
+    let runtime = try makeRuntime(
+      actionCounter: actionCounter,
+      actionHandlerFails: true
+    )
+    let session = try await open(runtime, required: ["semantic.catalog"])
+    let actionDeclaration = try await declaration(
+      from: runtime,
+      context: session.context,
+      id: "account.delete"
+    )
+    let response = try await call(
+      runtime,
+      request(
+        "semantic.invoke",
+        context: session.context,
+        params: [
+          "capability": .string("account.delete"),
+          "declarationRevision": .unsignedInteger(actionDeclaration.declarationRevision),
+          "inputSchema": actionDeclaration.inputSchema!,
+          "input": .object(["confirm": .bool(true)]),
+          "authorizationGrant": .string("grant"),
+        ]
+      )
+    )
+    assertError(
+      response,
+      code: -32026,
+      kind: "action.outcomeUnknown",
+      message: "Action outcome is unknown",
+      retryable: false
+    )
+    let actionCount = await actionCounter.value
+    XCTAssertEqual(actionCount, 1)
+    XCTAssertFalse(encoded(response).contains("customer-secret"))
+    XCTAssertFalse(encoded(response).contains("grant"))
   }
 
   func testListPaginatesOpaqueMembershipWithoutValues() async throws {
@@ -458,12 +607,15 @@ final class SemanticProtocolRuntimeTests: XCTestCase {
 
   private func makeRuntime(
     counter: InvocationCounter? = nil,
+    actionCounter: InvocationCounter? = nil,
     available: Bool = true,
     discoverAllowed: Bool = true,
     schemaAllowed: Bool = true,
     resourceAllowed: Bool = true,
+    actionAllowed: Bool = true,
     extraResource: Bool = false,
     handlerFails: Bool = false,
+    actionHandlerFails: Bool = false,
     maximumRequestBytes: Int = 4_096,
     maximumResponseBytes: Int = 4_096,
     outputLength: Int? = nil,
@@ -503,7 +655,10 @@ final class SemanticProtocolRuntimeTests: XCTestCase {
       declarationRevision: 3,
       input: SemanticInputCodec(schema: actionInput) { _ in true },
       policy: SemanticActionPolicy(authorization: .destructiveAuthorization, retrySafety: .retryWithProofOnly),
-      handler: { _ in }
+      handler: { _ in
+        if let actionCounter { await actionCounter.increment() }
+        if actionHandlerFails { throw FixtureError.sensitive("customer-secret") }
+      }
     )
     let catalog = try builder.freeze(
       identity: SemanticCatalogIdentity(id: "catalog_fixture0001", generation: 7)
@@ -528,7 +683,23 @@ final class SemanticProtocolRuntimeTests: XCTestCase {
         discloseResource: { _, _ in
           if let resourceGate { return await resourceGate.waitForPermission() }
           return resourceAllowed
-        }
+        },
+        discloseAction: { _, _ in actionAllowed }
+      ),
+      actionCoordinator: TargetActionCoordinator(
+        catalog: catalog,
+        targetID: "target_fixture",
+        evidence: TestEvidencePort(),
+        policy: TargetActionPolicy(
+          resolve: { _, subject in
+            SemanticActionPolicy(
+              authorization: subject.declaredAuthorization,
+              retrySafety: subject.retrySafety
+            )
+          },
+          validateDestructive: { request in request.grant == "grant" },
+          consumeDestructive: { request in request.grant == "grant" }
+        )
       )
     )
   }
@@ -772,4 +943,10 @@ private actor ResourceDisclosureGate {
 
 private enum FixtureError: Error {
   case sensitive(String)
+}
+
+private struct TestEvidencePort: ActionEvidencePort {
+  func captureBefore(context: TargetActionContext) async throws {}
+  func observeStability(context: TargetActionContext) async throws {}
+  func captureAfter(context: TargetActionContext) async throws {}
 }

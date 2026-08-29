@@ -415,13 +415,38 @@ async function validSemanticCase(semanticCase, fixtureDirectory) {
     response.error.code === expected.code &&
     response.error.data.kind === expected.kind &&
     response.error.data.retryable === expected.retryable;
-  const validTrace = (trace, expected) =>
-    trace.kind === "contractTrace" &&
-    expected.events.every((event) => trace.events.includes(event)) &&
-    Object.entries(expected.dispatch).every(
-      ([name, count]) => trace.dispatch[name] === count,
-    ) &&
-    (expected.retrySuppressed === undefined || trace.retry.suppressed === expected.retrySuppressed);
+  const validTrace = (trace, expected) => {
+    const matchesContract =
+      trace.kind === "contractTrace" &&
+      expected.events.every((event) => trace.events.includes(event)) &&
+      Object.entries(expected.dispatch).every(
+        ([name, count]) => trace.dispatch[name] === count,
+      ) &&
+      (expected.retrySuppressed === undefined ||
+        trace.retry.suppressed === expected.retrySuppressed);
+    if (!matchesContract) {
+      return false;
+    }
+    if (expected.recovery === undefined) {
+      return true;
+    }
+    const mutationEffects = new Set(["invoke", "write", "mutation"]);
+    const allowedEffects = trace.recovery?.allowedEffects ?? [];
+    const nextActions = trace.nextActions ?? [];
+    const hasMutationNextAction = nextActions.some((action) => {
+      if (action === "semantic.invoke") {
+        return true;
+      }
+      return action?.method === "semantic.invoke" || action?.name === "semantic.invoke";
+    });
+    return (
+      trace.recovery?.mode === "readOnly" &&
+      trace.recovery.allowReplay === false &&
+      isDeepStrictEqual(trace.recovery.allowedEffects, ["read"]) &&
+      !allowedEffects.some((effect) => mutationEffects.has(effect)) &&
+      !hasMutationNextAction
+    );
+  };
 
   if (semanticCase.cursorFailure) {
     const initialRequest = await readFixture(semanticCase.initialRequest);
@@ -760,6 +785,71 @@ test("v1.2 semantic cross-message invariants", async (suite) => {
       }
     });
   }
+});
+
+test("v1.2 action binding cases stay structural and recovery stays off the wire", async () => {
+  const actionBindingCases = await readJson(
+    path.join(protocolDirectory, "v1.2", "action-binding-cases.json"),
+  );
+  assert.equal(actionBindingCases.algorithm, "sha256");
+  assert.equal(actionBindingCases.digestPrefix, "sha256:");
+  const caseIds = actionBindingCases.cases.map((item) => item.id);
+  for (const requiredId of [
+    "object-key-order",
+    "unicode-key-order",
+    "escape-equivalent",
+    "unicode-no-normalization",
+    "int64-exact",
+    "negative-zero",
+    "finite-decimal",
+    "finite-exponent-tiny",
+    "finite-exponent-huge",
+    "nan-inf-fail-closed",
+  ]) {
+    assert.ok(caseIds.includes(requiredId), `missing action-binding case ${requiredId}`);
+  }
+  const int64Exact = actionBindingCases.cases.find((item) => item.id === "int64-exact");
+  assert.deepEqual(int64Exact.jsonTexts, [
+    "9223372036854775807",
+    "9223372036854775806",
+  ]);
+  assert.deepEqual(int64Exact.digests, [
+    "sha256:b34a1c30a715f6bf8b7243afa7fab883ce3612b7231716bdcbbdc1982e1aed29",
+    "sha256:73b94a8ddf2cb06f9795f38faead5d3d3de7042f0285586efd9d75c3e53c3617",
+  ]);
+  const keyOrder = actionBindingCases.cases.find((item) => item.id === "object-key-order");
+  assert.equal(keyOrder.canonical, '{"a":2,"b":1}');
+  assert.equal(
+    keyOrder.digest,
+    "sha256:d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772",
+  );
+  const unicodeKeyOrder = actionBindingCases.cases.find((item) => item.id === "unicode-key-order");
+  assert.ok(unicodeKeyOrder);
+  assert.equal(
+    unicodeKeyOrder.digest,
+    "sha256:13f878ef9384d590f247c529a1b5831722a4bc7d02c8a6757ecd7b9b5b31cd06",
+  );
+  const nanInf = actionBindingCases.cases.find((item) => item.id === "nan-inf-fail-closed");
+  assert.ok(nanInf.synthetic.includes("NaN"));
+  assert.ok(nanInf.synthetic.includes("Infinity"));
+  assert.ok(nanInf.synthetic.includes("-Infinity"));
+
+  const wireError = await readJson(
+    path.join(
+      protocolDirectory,
+      "v1.2",
+      "fixtures",
+      "valid",
+      "semantic-invoke-outcome-unknown-exchange-error.json",
+    ),
+  );
+  assert.equal(Object.hasOwn(wireError, "recovery"), false);
+  assert.equal(Object.hasOwn(wireError.error, "recovery"), false);
+  assert.equal(Object.hasOwn(wireError.error.data, "recovery"), false);
+  assert.equal(wireError.error.code, -32026);
+  assert.equal(wireError.error.data.kind, "action.outcomeUnknown");
+  assert.equal(wireError.error.data.retryable, false);
+  assert.ok(wireError.error.data.details.capability);
 });
 
 test("v1.1 string matching semantics", async (suite) => {

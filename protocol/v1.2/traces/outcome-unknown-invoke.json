@@ -1,1 +1,1 @@
-{"kind":"contractTrace","events":["requestReceived","actionCoordinator","mutationDispatched","acknowledgementLost","retrySuppressed"],"dispatch":{"resourceQuery":0,"actionCoordinator":1,"mutation":1},"retry":{"suppressed":true}}
+{"kind":"contractTrace","events":["requestReceived","actionCoordinator","mutationDispatched","acknowledgementLost","retrySuppressed"],"dispatch":{"resourceQuery":0,"actionCoordinator":1,"mutation":1},"retry":{"suppressed":true},"recovery":{"mode":"readOnly","allowReplay":false,"allowedEffects":["read"]}}
