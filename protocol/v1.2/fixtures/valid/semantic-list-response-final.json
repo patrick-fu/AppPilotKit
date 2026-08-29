@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"list-2","result":{"catalog":{"id":"catalog_12345678","generation":7},"capabilities":[{"id":"profile.summary","kind":"resource","declarationRevision":2}],"page":{"truncated":false,"returnedItems":1,"appliedLimits":{"maxItems":2,"maxBytes":4096}}}}

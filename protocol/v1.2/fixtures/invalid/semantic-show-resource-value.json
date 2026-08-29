@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"show-resource-value","result":{"id":"config.current","kind":"resource","declarationRevision":1,"valueSchema":{"id":"schema_value0001","revision":1,"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"value":{"mode":"leak"}}}

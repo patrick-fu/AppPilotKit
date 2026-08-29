@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"schema-1","result":{"schema":{"id":"schema_value0001","revision":2,"digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"document":{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"app://config.current/value@2","type":"object"}}}

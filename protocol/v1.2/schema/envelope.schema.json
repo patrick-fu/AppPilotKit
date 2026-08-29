@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1.2/envelope.schema.json",
+  "title": "AppPilotKit v1.2 envelope extensions",
+  "$ref": "#/$defs/message",
+  "$defs": {
+    "requestId": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/requestId"
+    },
+    "sessionContext": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionContext"
+    },
+    "profiledRequest": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/profiledRequest"
+    },
+    "success": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"
+    },
+    "safeSchemaHandle": {
+      "type": "object",
+      "required": ["id", "revision", "digest"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^schema_[A-Za-z0-9._~-]{8,120}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "safeErrorDetails": {
+      "type": "object",
+      "properties": {
+        "supportedMajor": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "method": {
+          "type": "string",
+          "pattern": "^(?!rpc\\.)[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+$",
+          "maxLength": 128
+        },
+        "snapshotId": {
+          "type": "string",
+          "pattern": "^snapshot_[A-Za-z0-9._~-]{8,120}$"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actualBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capability": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "declarationRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "schema": {
+          "$ref": "#/$defs/safeSchemaHandle"
+        },
+        "field": {
+          "enum": ["capability", "declarationRevision", "inputSchema", "valueSchema", "input", "authorizationGrant"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "safeLegacyError": {
+      "allOf": [
+        {
+          "$ref": "https://apppilotkit.dev/protocol/v1.1/envelope.schema.json#/$defs/error"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "object",
+              "properties": {
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "details": {
+                      "$ref": "#/$defs/safeErrorDetails"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "object",
+              "oneOf": [
+                {"type":"object","properties":{"code":{"const":-32700},"message":{"const":"Parse error"}}},
+                {"type":"object","properties":{"code":{"const":-32600},"message":{"const":"Invalid request"}}},
+                {"type":"object","properties":{"code":{"const":-32601},"message":{"const":"Method not found"}}},
+                {"type":"object","properties":{"code":{"const":-32602},"message":{"const":"Invalid params"}}},
+                {"type":"object","properties":{"code":{"const":-32603},"message":{"const":"Internal error"}}},
+                {"type":"object","properties":{"code":{"const":-32001},"message":{"const":"No compatible protocol version"}}},
+                {"type":"object","properties":{"code":{"const":-32002},"message":{"const":"Session expired"}}},
+                {"type":"object","properties":{"code":{"const":-32003},"message":{"const":"Capability unavailable"}}},
+                {"type":"object","properties":{"code":{"const":-32004},"message":{"const":"Resource exhausted"}}},
+                {"type":"object","properties":{"code":{"const":-32005},"message":{"const":"Timeout"}}},
+                {"type":"object","properties":{"code":{"const":-32006},"message":{"const":"Cursor expired"}}},
+                {"type":"object","properties":{"code":{"const":-32010},"message":{"const":"Snapshot is no longer retained"}}},
+                {"type":"object","properties":{"code":{"const":-32011},"message":{"const":"UI reference not found"}}}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "semanticErrorData": {
+      "type": "object",
+      "required": ["kind", "retryable"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "semantic.capabilityNotFound",
+            "semantic.schemaMismatch",
+            "semantic.unavailable",
+            "semantic.disclosureDenied",
+            "action.policyDenied",
+            "action.conflict",
+            "action.outcomeUnknown"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "$ref": "#/$defs/safeErrorDetails"
+        }
+      },
+      "additionalProperties": false
+    },
+    "semanticErrorObject": {
+      "type": "object",
+      "required": ["code", "message", "data"],
+      "properties": {
+        "code": {
+          "enum": [-32020, -32021, -32022, -32023, -32024, -32025, -32026]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "data": {
+          "$ref": "#/$defs/semanticErrorData"
+        }
+      },
+      "additionalProperties": false,
+      "oneOf": [
+        {"type":"object","properties":{"code":{"const":-32020},"message":{"const":"Semantic capability is unavailable"},"data":{"type":"object","properties":{"kind":{"const":"semantic.capabilityNotFound"},"retryable":{"const":false}}}}},
+        {"type":"object","properties":{"code":{"const":-32021},"message":{"const":"Semantic schema does not match"},"data":{"type":"object","properties":{"kind":{"const":"semantic.schemaMismatch"},"retryable":{"const":false}}}}},
+        {"type":"object","properties":{"code":{"const":-32022},"message":{"const":"Semantic capability is unavailable"},"data":{"type":"object","properties":{"kind":{"const":"semantic.unavailable"},"retryable":{"const":true}}}}},
+        {"type":"object","properties":{"code":{"const":-32023},"message":{"const":"Semantic disclosure is denied"},"data":{"type":"object","properties":{"kind":{"const":"semantic.disclosureDenied"},"retryable":{"const":false}}}}},
+        {"type":"object","properties":{"code":{"const":-32024},"message":{"const":"Action policy is denied"},"data":{"type":"object","properties":{"kind":{"const":"action.policyDenied"},"retryable":{"const":false}}}}},
+        {"type":"object","properties":{"code":{"const":-32025},"message":{"const":"Action conflicts with an in-flight mutation"},"data":{"type":"object","properties":{"kind":{"const":"action.conflict"},"retryable":{"const":false}}}}},
+        {"type":"object","properties":{"code":{"const":-32026},"message":{"const":"Action outcome is unknown"},"data":{"type":"object","properties":{"kind":{"const":"action.outcomeUnknown"},"retryable":{"const":false}}}}}
+      ]
+    },
+    "semanticError": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "properties": {
+        "jsonrpc": {"const": "2.0"},
+        "id": {"$ref": "#/$defs/requestId"},
+        "error": {"$ref": "#/$defs/semanticErrorObject"}
+      },
+      "additionalProperties": false
+    },
+    "error": {
+      "oneOf": [
+        {"$ref": "#/$defs/safeLegacyError"},
+        {"$ref": "#/$defs/semanticError"}
+      ]
+    },
+    "response": {
+      "oneOf": [
+        {"$ref": "#/$defs/success"},
+        {"$ref": "#/$defs/error"}
+      ]
+    },
+    "message": {
+      "oneOf": [
+        {"$ref": "#/$defs/profiledRequest"},
+        {"$ref": "#/$defs/response"}
+      ]
+    }
+  }
+}

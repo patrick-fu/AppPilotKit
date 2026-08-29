@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"schema-leak","error":{"code":-32004,"message":"Response exceeds a limit","data":{"kind":"resourceExhausted","retryable":false,"details":{"input":{"customer":"must-not-echo"},"value":{"mode":"must-not-echo"}}}}}

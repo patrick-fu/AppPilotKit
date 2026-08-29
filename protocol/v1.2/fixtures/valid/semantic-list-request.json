@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"list-1","method":"semantic.list","context":{"id":"session_0123456789abcdef","generation":7},"params":{"limits":{"maxItems":2,"maxBytes":4096}}}

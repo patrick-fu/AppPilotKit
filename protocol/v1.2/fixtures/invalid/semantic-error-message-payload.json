@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"query-message-leak","error":{"code":-32021,"message":"Semantic schema does not match: {\"customer\":\"must-not-echo\"}","data":{"kind":"semantic.schemaMismatch","retryable":false}}}

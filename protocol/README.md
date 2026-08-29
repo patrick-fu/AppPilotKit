@@ -32,6 +32,52 @@ and mobile SDKs. It does not normalize platform UI models.
 See [ADR 0002](../docs/adr/0002-ui-snapshot-and-inspection.md) for selection,
 reference lifetime, traversal, and platform-preservation rules.
 
+## Version 1.2 semantic capabilities
+
+- `v1.2/schema/semantic.schema.json` defines the negotiated
+  `semantic.list`, `semantic.show`, `semantic.schema`, `semantic.query`, and
+  `semantic.invoke` methods. The only new session capability is
+  `semantic.catalog`; it is not a member of an App's Semantic Catalog and is
+  never emitted by v1.0 or v1.1 negotiation.
+- Catalog membership is immutable for a process generation. `semantic.list`
+  is the only paginated semantic method. Its opaque cursor is bound to the
+  session, process generation, method, original parameters, and catalog.
+  Catalog items contain only `id`, `kind`, and `declarationRevision`.
+- `semantic.show` returns only a static declaration. Resource declarations
+  identify an optional input schema and required value schema. Action
+  declarations identify their input schema plus explicit authorization and
+  retry-safety policy. Neither declaration contains values or business output.
+- `semantic.schema` retrieves one atomic App JSON Schema by stable
+  `{id, revision, digest}` handle. The document identifies JSON Schema
+  2020-12 with `$schema` and a URI `$id`; it is never a Resource value.
+  An oversized schema fails with `resourceExhausted`, never pagination or
+  truncation.
+- `semantic.query` is read-only and returns one opaque value, its value-schema
+  handle, and disclosed UTF-8 value bytes. Optional input and input-schema
+  handles are paired. `semantic.invoke` routes every mutation through the
+  Target Action Coordinator and confirms only handler completion; it never
+  returns business output, rolls back, or retries automatically.
+- Calls echo `declarationRevision` and schema handles to reject stale
+  declarations and schemas. App schema revisions may change while protocol
+  minor 1.2 remains unchanged.
+- `v1.2/schema/envelope.schema.json` adds the closed Safe Error Context for
+  both new and inherited errors. Error messages are stock code/kind strings;
+  typed input, values, and authorization grants cannot appear in either a
+  message or `details`. It defines
+  one-to-one errors: `semantic.capabilityNotFound` (`-32020`),
+  `semantic.schemaMismatch` (`-32021`), `semantic.unavailable` (`-32022`),
+  `semantic.disclosureDenied` (`-32023`), `action.policyDenied` (`-32024`),
+  `action.conflict` (`-32025`), and `action.outcomeUnknown` (`-32026`). An
+  ambiguous action outcome is always `retryable: false`.
+- `v1.2/fixtures`, `negotiation-cases.json`, and `semantic-cases.json` cover
+  strict objects, negotiation isolation, bounded catalog pagination, schema
+  evolution, safe errors, size limits, and action dispatch safety. The trace
+  files referenced by `semantic-cases.json` are contract traces for harness
+  assertions, not runtime acceptance evidence or an SDK execution format.
+
+See [ADR 0008](../docs/adr/0008-app-registered-semantic-capabilities.md) for
+the App-owned catalog, disclosure, and action-policy ownership boundaries.
+
 The Node package is only a contract-test harness; it does not select the final
 CLI implementation language.
 

@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"query-denied","error":{"code":-32023,"message":"Semantic disclosure is denied","data":{"kind":"semantic.disclosureDenied","retryable":false,"details":{"capability":"config.current"}}}}

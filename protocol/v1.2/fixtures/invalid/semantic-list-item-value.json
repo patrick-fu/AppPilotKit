@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"list-leak","result":{"catalog":{"id":"catalog_12345678","generation":7},"capabilities":[{"id":"config.current","kind":"resource","declarationRevision":1,"value":{"secret":"no"}}],"page":{"truncated":false,"returnedItems":1,"appliedLimits":{"maxItems":2,"maxBytes":8192}}}}

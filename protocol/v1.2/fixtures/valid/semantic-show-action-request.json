@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"show-action","method":"semantic.show","context":{"id":"session_0123456789abcdef","generation":7},"params":{"capability":"account.delete","declarationRevision":3}}

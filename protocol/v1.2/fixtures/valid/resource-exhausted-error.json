@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"schema-large","error":{"code":-32004,"message":"Resource exhausted","data":{"kind":"resourceExhausted","retryable":false,"details":{"field":"valueSchema"}}}}

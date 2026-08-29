@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"query-leak","error":{"code":-32021,"message":"Schema does not match","data":{"kind":"semantic.schemaMismatch","retryable":false,"details":{"input":{"customer":"must-not-echo"}}}}}

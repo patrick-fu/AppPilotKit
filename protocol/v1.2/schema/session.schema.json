@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1.2/session.schema.json",
+  "title": "AppPilotKit v1.2 session negotiation",
+  "oneOf": [
+    {"$ref": "#/$defs/openRequest"},
+    {"$ref": "#/$defs/openSuccess"},
+    {"$ref": "https://apppilotkit.dev/protocol/v1.2/envelope.schema.json#/$defs/error"}
+  ],
+  "$defs": {
+    "openRequest": {
+      "$ref": "https://apppilotkit.dev/protocol/v1/session.schema.json#/$defs/openRequest"
+    },
+    "selectedVersion": {
+      "type": "object",
+      "required": ["major", "minor"],
+      "properties": {"major": {"const": 1}, "minor": {"const": 2}},
+      "additionalProperties": false
+    },
+    "openResult": {
+      "type": "object",
+      "required": ["context", "protocol", "capabilities", "limits"],
+      "properties": {
+        "context": {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionContext"},
+        "protocol": {"$ref": "#/$defs/selectedVersion"},
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "https://apppilotkit.dev/protocol/v1/session.schema.json#/$defs/capability"}
+        },
+        "limits": {"$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/negotiatedLimits"}
+      },
+      "additionalProperties": false
+    },
+    "openSuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/openResult"}}}
+      ]
+    }
+  }
+}

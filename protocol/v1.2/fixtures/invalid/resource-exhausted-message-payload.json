@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"schema-message-leak","error":{"code":-32004,"message":"Resource exhausted for {\"customer\":\"must-not-echo\"}","data":{"kind":"resourceExhausted","retryable":false}}}

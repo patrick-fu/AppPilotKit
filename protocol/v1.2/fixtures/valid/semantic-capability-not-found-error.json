@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":"show-missing","error":{"code":-32020,"message":"Semantic capability is unavailable","data":{"kind":"semantic.capabilityNotFound","retryable":false,"details":{"capability":"hidden.operation"}}}}

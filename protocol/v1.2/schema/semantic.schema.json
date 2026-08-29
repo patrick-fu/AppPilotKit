@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/protocol/v1.2/semantic.schema.json",
+  "title": "AppPilotKit v1.2 semantic capability protocol",
+  "oneOf": [
+    {"$ref": "#/$defs/listRequest"},
+    {"$ref": "#/$defs/listSuccess"},
+    {"$ref": "#/$defs/showRequest"},
+    {"$ref": "#/$defs/showSuccess"},
+    {"$ref": "#/$defs/schemaRequest"},
+    {"$ref": "#/$defs/schemaSuccess"},
+    {"$ref": "#/$defs/queryRequest"},
+    {"$ref": "#/$defs/querySuccess"},
+    {"$ref": "#/$defs/invokeRequest"},
+    {"$ref": "#/$defs/invokeSuccess"},
+    {"$ref": "https://apppilotkit.dev/protocol/v1.2/envelope.schema.json#/$defs/error"}
+  ],
+  "$defs": {
+    "capabilityId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+      "maxLength": 128
+    },
+    "declarationRevision": {"type": "integer", "minimum": 1},
+    "schemaHandle": {"$ref": "https://apppilotkit.dev/protocol/v1.2/envelope.schema.json#/$defs/safeSchemaHandle"},
+    "catalog": {
+      "type": "object",
+      "required": ["id", "generation"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^catalog_[A-Za-z0-9._~-]{8,120}$"},
+        "generation": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "catalogItem": {
+      "type": "object",
+      "required": ["id", "kind", "declarationRevision"],
+      "properties": {
+        "id": {"$ref": "#/$defs/capabilityId"},
+        "kind": {"enum": ["resource", "action"]},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"}
+      },
+      "additionalProperties": false
+    },
+    "initialListParams": {
+      "type": "object",
+      "properties": {
+        "limits": {"$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/requestedLimits"}
+      },
+      "additionalProperties": false
+    },
+    "listParams": {
+      "oneOf": [
+        {"$ref": "#/$defs/initialListParams"},
+        {"type": "object", "required": ["cursor"], "properties": {"cursor": {"type": "string", "minLength": 1, "maxLength": 4096}}, "additionalProperties": false}
+      ]
+    },
+    "capabilityRevisionParams": {
+      "type": "object",
+      "required": ["capability", "declarationRevision"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/capabilityId"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"}
+      },
+      "additionalProperties": false
+    },
+    "resourceDeclaration": {
+      "type": "object",
+      "required": ["id", "kind", "declarationRevision", "valueSchema"],
+      "properties": {
+        "id": {"$ref": "#/$defs/capabilityId"},
+        "kind": {"const": "resource"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "inputSchema": {"$ref": "#/$defs/schemaHandle"},
+        "valueSchema": {"$ref": "#/$defs/schemaHandle"}
+      },
+      "additionalProperties": false
+    },
+    "actionPolicy": {
+      "type": "object",
+      "required": ["authorization", "retrySafety"],
+      "properties": {
+        "authorization": {"enum": ["none", "destructiveAuthorization"]},
+        "retrySafety": {"enum": ["noAutomaticRetry", "retryWithProofOnly"]}
+      },
+      "additionalProperties": false
+    },
+    "actionDeclaration": {
+      "type": "object",
+      "required": ["id", "kind", "declarationRevision", "inputSchema", "policy"],
+      "properties": {
+        "id": {"$ref": "#/$defs/capabilityId"},
+        "kind": {"const": "action"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "inputSchema": {"$ref": "#/$defs/schemaHandle"},
+        "policy": {"$ref": "#/$defs/actionPolicy"}
+      },
+      "additionalProperties": false
+    },
+    "declaration": {"oneOf": [{"$ref": "#/$defs/resourceDeclaration"}, {"$ref": "#/$defs/actionDeclaration"}]},
+    "listRequest": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"},
+        {"type": "object", "required": ["params"], "properties": {"method": {"const": "semantic.list"}, "params": {"$ref": "#/$defs/listParams"}}}
+      ]
+    },
+    "listResult": {
+      "type": "object",
+      "required": ["catalog", "capabilities", "page"],
+      "properties": {
+        "catalog": {"$ref": "#/$defs/catalog"},
+        "capabilities": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/catalogItem"}},
+        "page": {"$ref": "https://apppilotkit.dev/protocol/v1/disclosure.schema.json#/$defs/page"}
+      },
+      "additionalProperties": false
+    },
+    "listSuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/listResult"}}}
+      ]
+    },
+    "showRequest": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"},
+        {"type": "object", "required": ["params"], "properties": {"method": {"const": "semantic.show"}, "params": {"$ref": "#/$defs/capabilityRevisionParams"}}}
+      ]
+    },
+    "showSuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/declaration"}}}
+      ]
+    },
+    "schemaParams": {
+      "type": "object",
+      "required": ["capability", "declarationRevision", "schema"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/capabilityId"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "schema": {"$ref": "#/$defs/schemaHandle"}
+      },
+      "additionalProperties": false
+    },
+    "schemaRequest": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"},
+        {"type": "object", "required": ["params"], "properties": {"method": {"const": "semantic.schema"}, "params": {"$ref": "#/$defs/schemaParams"}}}
+      ]
+    },
+    "appSchemaDocument": {
+      "type": "object",
+      "required": ["$schema", "$id"],
+      "properties": {
+        "$schema": {"const": "https://json-schema.org/draft/2020-12/schema"},
+        "$id": {"type": "string", "pattern": "^[a-z][a-z0-9+.-]*:"}
+      },
+      "additionalProperties": true
+    },
+    "schemaResult": {
+      "type": "object",
+      "required": ["schema", "document"],
+      "properties": {"schema": {"$ref": "#/$defs/schemaHandle"}, "document": {"$ref": "#/$defs/appSchemaDocument"}},
+      "additionalProperties": false
+    },
+    "schemaSuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/schemaResult"}}}
+      ]
+    },
+    "queryParams": {
+      "type": "object",
+      "required": ["capability", "declarationRevision", "valueSchema"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/capabilityId"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "inputSchema": {"$ref": "#/$defs/schemaHandle"},
+        "input": true,
+        "valueSchema": {"$ref": "#/$defs/schemaHandle"}
+      },
+      "additionalProperties": false,
+      "dependentRequired": {
+        "inputSchema": ["input"],
+        "input": ["inputSchema"]
+      }
+    },
+    "queryRequest": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"},
+        {"type": "object", "required": ["params"], "properties": {"method": {"const": "semantic.query"}, "params": {"$ref": "#/$defs/queryParams"}}}
+      ]
+    },
+    "queryResult": {
+      "type": "object",
+      "required": ["value", "valueSchema", "bytes"],
+      "properties": {
+        "value": true,
+        "valueSchema": {"$ref": "#/$defs/schemaHandle"},
+        "bytes": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "querySuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/queryResult"}}}
+      ]
+    },
+    "invokeParams": {
+      "type": "object",
+      "required": ["capability", "declarationRevision", "inputSchema", "input"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/capabilityId"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "inputSchema": {"$ref": "#/$defs/schemaHandle"},
+        "input": true,
+        "authorizationGrant": {"type": "string", "minLength": 1, "maxLength": 256}
+      },
+      "additionalProperties": false
+    },
+    "invokeRequest": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/sessionRequest"},
+        {"type": "object", "required": ["params"], "properties": {"method": {"const": "semantic.invoke"}, "params": {"$ref": "#/$defs/invokeParams"}}}
+      ]
+    },
+    "invokeResult": {
+      "type": "object",
+      "required": ["capability", "declarationRevision", "completed"],
+      "properties": {
+        "capability": {"$ref": "#/$defs/capabilityId"},
+        "declarationRevision": {"$ref": "#/$defs/declarationRevision"},
+        "completed": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "invokeSuccess": {
+      "allOf": [
+        {"$ref": "https://apppilotkit.dev/protocol/v1/envelope.schema.json#/$defs/success"},
+        {"type": "object", "properties": {"result": {"$ref": "#/$defs/invokeResult"}}}
+      ]
+    }
+  }
+}
