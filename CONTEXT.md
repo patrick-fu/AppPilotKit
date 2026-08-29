@@ -93,7 +93,7 @@ An original App Surface screenshot or a separately generated crop or annotation 
 _Avoid_: Inline screenshot payload, modified original
 
 **Disclosure Policy**:
-The App-owned upper bound on data that providers may disclose. An Agent request may narrow this policy but can never expand it, and required redaction happens before data enters a snapshot store or Artifact.
+The App-owned upper bound on data that UI providers and Semantic Capability adapters may disclose. An Agent request may narrow this policy but can never expand it; classification and redaction finish before a snapshot store, generic protocol runtime, or Artifact accepts detached JSON.
 _Avoid_: Agent permission, output filter
 
 **Structural Data**:
@@ -113,7 +113,7 @@ Passwords, secure text, tokens, keys, payment information, and equivalent secret
 _Avoid_: Redacted User Content, sensitive Artifact
 
 **Fail-Closed Disclosure**:
-A provider outcome in which any unclassified field, incomplete redaction, or invalid output fails the entire capture before snapshot or Artifact creation. Partial and best-effort disclosure are prohibited.
+A UI provider or Semantic Capability adapter outcome in which an unclassified field, incomplete redaction, invalid detached JSON, or attempted Secret Content serialization fails the entire capture or capability response before a snapshot store, generic protocol runtime, or Artifact accepts it. Partial and best-effort disclosure are prohibited.
 _Avoid_: Best-effort redaction, output scrubbing
 
 **Target Ephemeral Data**:
@@ -179,6 +179,18 @@ _Avoid_: Action result, retry signal
 **Semantic Action**:
 An App-registered domain operation with explicit policy metadata. It is never discovered through reflection, invoked implicitly, or allowed to bypass authorization and safety rules.
 _Avoid_: Hidden command, reflected method
+
+**Semantic Resource**:
+An App-registered, read-only domain observation. It has no implied mutation or provider-tree identity.
+_Avoid_: UI snapshot, Semantic Projection, property bag
+
+**Semantic Capability**:
+An App-registered Semantic Resource or Semantic Action that the Target may expose under a stable identity.
+_Avoid_: Command, endpoint, Protocol Capability, session capability, reflected method
+
+**Semantic Catalog**:
+The flat, immutable set of Semantic Capabilities registered by one App process generation. Capability membership is distinct from dynamic availability and resource values.
+_Avoid_: Dynamic registry, Demo Scenario Contract, service locator
 
 **Destructive Authorization**:
 A one-time, short-lived grant from a user or preconfigured policy that is bound to an exact Target, action, parameters, and snapshot generation. An Agent cannot mint it, and a denied destructive action never falls back to an ordinary mutation.
