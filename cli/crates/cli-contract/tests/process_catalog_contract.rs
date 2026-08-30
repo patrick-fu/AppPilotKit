@@ -1,7 +1,8 @@
 #![cfg(unix)]
 
 use serde_json::Value;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
@@ -611,12 +612,13 @@ fn installed_process_rejects_malformed_and_oversized_peer_wire() {
     );
     assert!(!String::from_utf8_lossy(&malformed.stdout).contains("canary"));
 
+    let max_response_bytes = 1024;
     let (oversized, _) = run_with_target(
         &["catalog", "list", "--output", "json"],
-        semantic_session(2, true, 1024),
-        |request| {
+        semantic_session(2, true, max_response_bytes),
+        move |request| {
             let mut response = success_response(request).unwrap();
-            response.extend(std::iter::repeat_n(b' ', 1024));
+            response.resize(max_response_bytes + 1, b' ');
             Some(response)
         },
     );
@@ -1002,13 +1004,36 @@ fn write_exchange_frame(stream: &mut UnixStream, bytes: &[u8], max_response_byte
         }
         match stream.flush() {
             Ok(()) => {}
-            Err(err) if expected_peer_close_after_oversized(&err) => {}
+            Err(err) if expected_peer_close_after_oversized(&err) => return,
             Err(err) => panic!("oversized exchange flush failed: {err}"),
         }
+        wait_for_fixture_client_eof(stream);
         return;
     }
     stream.write_all(b"\n").unwrap();
     stream.flush().unwrap();
+    wait_for_fixture_client_eof(stream);
+}
+
+fn wait_for_fixture_client_eof(stream: &mut UnixStream) {
+    stream.shutdown(Shutdown::Write).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    let mut unexpected = [0_u8; 1];
+    match stream.read(&mut unexpected) {
+        Ok(0) => {}
+        Ok(count) => panic!("fixture client sent {count} unexpected bytes after its response"),
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+            ) =>
+        {
+            panic!("fixture client did not close within the peer EOF deadline")
+        }
+        Err(err) => panic!("fixture client EOF read failed: {err}"),
+    }
 }
 
 fn expected_peer_close_after_oversized(err: &std::io::Error) -> bool {
