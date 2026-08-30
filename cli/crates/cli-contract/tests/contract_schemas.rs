@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 const SCHEMAS: &[&str] = &[
     include_str!("../../../contracts/v1/schema/artifact.schema.json"),
     include_str!("../../../contracts/v1/schema/capability-manifest.schema.json"),
+    include_str!("../../../contracts/v1/schema/catalog.schema.json"),
     include_str!("../../../contracts/v1/schema/disclosure.schema.json"),
     include_str!("../../../contracts/v1/schema/discovery.schema.json"),
     include_str!("../../../contracts/v1/schema/error.schema.json"),
@@ -51,6 +52,7 @@ fn checked_in_schemas_are_unique_valid_and_accept_the_capabilities_result() {
         vec![
             "https://apppilotkit.dev/cli/v1/artifact.schema.json",
             "https://apppilotkit.dev/cli/v1/capability-manifest.schema.json",
+            "https://apppilotkit.dev/cli/v1/catalog.schema.json",
             "https://apppilotkit.dev/cli/v1/disclosure.schema.json",
             "https://apppilotkit.dev/cli/v1/discovery.schema.json",
             "https://apppilotkit.dev/cli/v1/error.schema.json",

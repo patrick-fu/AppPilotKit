@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 const SCHEMA_SOURCES: &[&str] = &[
     include_str!("../../../contracts/v1/schema/artifact.schema.json"),
     include_str!("../../../contracts/v1/schema/capability-manifest.schema.json"),
+    include_str!("../../../contracts/v1/schema/catalog.schema.json"),
     include_str!("../../../contracts/v1/schema/disclosure.schema.json"),
     include_str!("../../../contracts/v1/schema/discovery.schema.json"),
     include_str!("../../../contracts/v1/schema/error.schema.json"),

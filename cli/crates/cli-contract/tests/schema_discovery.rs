@@ -18,7 +18,7 @@ fn agent_can_list_and_show_the_exact_embedded_schemas() {
         .iter()
         .map(|id| id.as_str().expect("schema identifier"))
         .collect::<Vec<_>>();
-    assert_eq!(ids.len(), 8);
+    assert_eq!(ids.len(), 9);
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(ids.contains(&MACHINE_RESULT_ID));
 

@@ -138,7 +138,19 @@ impl Disclosure {
         }
     }
 
-    #[allow(dead_code)] // No installed command consumes a cursor in this discovery-only slice.
+    pub(crate) fn complete_with_limits(
+        returned_items: usize,
+        applied_limits: AppliedLimits,
+    ) -> Self {
+        Self {
+            truncated: false,
+            returned_items,
+            applied_limits: Some(applied_limits),
+            reasons: None,
+            next_cursor: None,
+        }
+    }
+
     pub(crate) fn truncated(
         returned_items: usize,
         applied_limits: AppliedLimits,
@@ -239,6 +251,14 @@ pub(crate) struct InvocationMetadata {
     retry_safety: RetrySafety,
 }
 
+fn retain_read_only_recovery(next_actions: &mut Vec<NextAction>) {
+    next_actions.retain(|action| {
+        action.side_effect == SideEffect::ReadOnly
+            && action.retry_safety == RetrySafety::Safe
+            && !action.argv.iter().any(|token| token == "invoke")
+    });
+}
+
 impl InvocationMetadata {
     pub(crate) fn new(
         command: Vec<String>,
@@ -270,7 +290,7 @@ impl InvocationMetadata {
                 mut context,
             } if error.kind == "action.outcomeUnknown" => {
                 error.retryable = false;
-                context.next_actions.clear();
+                retain_read_only_recovery(&mut context.next_actions);
                 (
                     TerminalStatus::Failed,
                     RetrySafety::UnsafeAfterAmbiguousResult,
@@ -290,7 +310,7 @@ impl InvocationMetadata {
                 resolution: CancellationResolution::MutationMayHaveExecuted { operation },
                 mut context,
             } => {
-                context.next_actions.clear();
+                retain_read_only_recovery(&mut context.next_actions);
                 (
                     TerminalStatus::Failed,
                     RetrySafety::UnsafeAfterAmbiguousResult,
