@@ -635,7 +635,7 @@ enum HostilePhase {
 
 #[derive(Clone, Copy, Debug)]
 enum HostileBehavior {
-    ContinuousWithoutNewline,
+    ChunkedOversizedWithoutNewline,
     NeverClose,
     OversizedWithoutNewline,
 }
@@ -643,7 +643,7 @@ enum HostileBehavior {
 #[test]
 fn installed_process_bounds_hostile_select_and_exchange_frames() {
     for behavior in [
-        HostileBehavior::ContinuousWithoutNewline,
+        HostileBehavior::ChunkedOversizedWithoutNewline,
         HostileBehavior::NeverClose,
         HostileBehavior::OversizedWithoutNewline,
     ] {
@@ -666,7 +666,7 @@ fn installed_process_bounds_hostile_select_and_exchange_frames() {
 
     for (behavior, expected) in [
         (
-            HostileBehavior::ContinuousWithoutNewline,
+            HostileBehavior::ChunkedOversizedWithoutNewline,
             "resourceExhausted",
         ),
         (HostileBehavior::NeverClose, "timeout"),
@@ -824,11 +824,15 @@ where
             assert_eq!(select["target"], session["target_id"]);
         }
         write_line(stream.get_mut(), &serde_json::to_vec(&session).unwrap());
+        let max_response_bytes = session["max_response_bytes"]
+            .as_u64()
+            .expect("fixture session carries max_response_bytes")
+            as usize;
         let exchange = read_line(&mut stream)?;
         assert_eq!(exchange["type"], "exchange");
         let request = exchange["request"].clone();
         if let Some(response) = responder(&request) {
-            write_line(stream.get_mut(), &response);
+            write_exchange_frame(stream.get_mut(), &response, max_response_bytes);
         }
         Some(request)
     });
@@ -880,11 +884,18 @@ fn write_hostile_frame(
     stop: &AtomicBool,
 ) {
     match behavior {
-        HostileBehavior::ContinuousWithoutNewline => {
-            while !stop.load(Ordering::Acquire) {
-                if stream.write_all(b"peer_SECRET_CANARY").is_err() || stream.flush().is_err() {
-                    break;
+        HostileBehavior::ChunkedOversizedWithoutNewline => {
+            let bytes = b"peer_SECRET_CANARY";
+            let mut remaining = limit + 1;
+            while remaining > 0 {
+                let chunk = remaining.min(bytes.len());
+                if stream.write_all(&bytes[..chunk]).is_err() {
+                    return;
                 }
+                remaining -= chunk;
+            }
+            let _ = stream.flush();
+            while !stop.load(Ordering::Acquire) {
                 thread::sleep(Duration::from_millis(10));
             }
         }
@@ -979,6 +990,32 @@ fn write_line(stream: &mut UnixStream, bytes: &[u8]) {
     stream.write_all(bytes).unwrap();
     stream.write_all(b"\n").unwrap();
     stream.flush().unwrap();
+}
+
+fn write_exchange_frame(stream: &mut UnixStream, bytes: &[u8], max_response_bytes: usize) {
+    stream.write_all(bytes).unwrap();
+    if bytes.len() > max_response_bytes {
+        match stream.write_all(b"\n") {
+            Ok(()) => {}
+            Err(err) if expected_peer_close_after_oversized(&err) => return,
+            Err(err) => panic!("oversized exchange terminator failed: {err}"),
+        }
+        match stream.flush() {
+            Ok(()) => {}
+            Err(err) if expected_peer_close_after_oversized(&err) => {}
+            Err(err) => panic!("oversized exchange flush failed: {err}"),
+        }
+        return;
+    }
+    stream.write_all(b"\n").unwrap();
+    stream.flush().unwrap();
+}
+
+fn expected_peer_close_after_oversized(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+    )
 }
 
 fn socket_path() -> PathBuf {
