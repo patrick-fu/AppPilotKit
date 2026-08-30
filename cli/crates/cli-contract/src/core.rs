@@ -1,4 +1,6 @@
+use crate::catalog::{self, CatalogRuntime, UnconfiguredCatalogRuntime};
 use crate::contracts::ContractCatalog;
+use crate::protocol::ProtocolContractCatalog;
 use crate::registry::{
     capability_manifest, command_annotations, command_model, command_result_schema_id,
     recognized_command_prefix,
@@ -9,6 +11,7 @@ use crate::result::{
 };
 use serde_json::to_value;
 use std::ffi::OsString;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,15 +64,23 @@ pub struct ProcessOutput {
     pub exit_code: u8,
 }
 
-#[derive(Debug)]
 pub struct CliCore {
     config: CliConfig,
     contracts: ContractCatalog,
+    protocol_contracts: ProtocolContractCatalog,
     next_run_id: AtomicU64,
+    catalog: Arc<dyn CatalogRuntime>,
 }
 
 impl CliCore {
     pub fn new(config: CliConfig) -> Result<Self, InitError> {
+        Self::with_catalog_runtime(config, Arc::new(UnconfiguredCatalogRuntime))
+    }
+
+    pub fn with_catalog_runtime(
+        config: CliConfig,
+        catalog: Arc<dyn CatalogRuntime>,
+    ) -> Result<Self, InitError> {
         if config.executable.is_empty() {
             return Err(InitError::EmptyExecutable);
         }
@@ -77,6 +88,7 @@ impl CliCore {
             return Err(InitError::EmptyVersion);
         }
         let contracts = ContractCatalog::new().map_err(InitError::Schema)?;
+        let protocol_contracts = ProtocolContractCatalog::new().map_err(InitError::Schema)?;
         if contracts
             .validate(
                 "https://apppilotkit.dev/cli/v1/capability-manifest.schema.json#/$defs/executable",
@@ -98,7 +110,9 @@ impl CliCore {
         Ok(Self {
             config,
             contracts,
+            protocol_contracts,
             next_run_id: AtomicU64::new(1),
+            catalog,
         })
     }
 
@@ -119,7 +133,9 @@ impl CliCore {
             Ok(matches) => matches,
             Err(error) if !error.use_stderr() => return clap_output(error),
             Err(error) => {
-                if let Some(output_mode) = machine_output {
+                if let Some(output_mode) = machine_output
+                    .or_else(|| contains_sensitive_option(&arguments).then_some(OutputMode::Human))
+                {
                     return self.invalid_invocation_output(
                         recognized_command_prefix(&arguments),
                         output_mode,
@@ -273,6 +289,25 @@ impl CliCore {
                     output_mode,
                 )
             }
+            Some(("catalog", catalog_matches)) => match catalog_matches.subcommand() {
+                Some((subcommand, matches)) => {
+                    let output = catalog::run(
+                        &self.config.executable,
+                        subcommand,
+                        matches,
+                        self.catalog.as_ref(),
+                        &self.protocol_contracts,
+                        &self.next_run_id,
+                    );
+                    let (side_effect, retry_safety) = command_annotations(&output.command)
+                        .expect("handler command comes from the registry");
+                    let result =
+                        InvocationMetadata::new(output.command, &[side_effect], retry_safety)
+                            .complete(&self.config.cli_version, output.outcome);
+                    self.validated_output(&result, &output.human_summary, output_mode)
+                }
+                None => command_help(&self.config, "catalog"),
+            },
             None => root_help(&self.config),
             Some(_) => unreachable!("the registry owns every parsed command"),
         }
@@ -394,14 +429,38 @@ impl CliCore {
             std::process::id(),
             self.next_run_id.fetch_add(1, Ordering::Relaxed)
         );
+        let command = result["command"]
+            .as_array()
+            .expect("Machine Result command is an array")
+            .iter()
+            .map(|token| {
+                token
+                    .as_str()
+                    .expect("Machine Result command tokens are strings")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let (started_side_effect, started_retry_safety) = command_annotations(&command)
+            .map(|(side_effect, retry_safety)| {
+                (
+                    serde_json::to_value(side_effect).expect("side effect serializes"),
+                    serde_json::to_value(retry_safety).expect("retry safety serializes"),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    result["side_effect"].clone(),
+                    result["retry_safety"].clone(),
+                )
+            });
         let started = serde_json::json!({
             "type": "run.started",
             "schema_version": "1.0",
             "cli_version": self.config.cli_version,
             "run_id": run_id,
             "command": result["command"],
-            "side_effect": result["side_effect"],
-            "retry_safety": result["retry_safety"],
+            "side_effect": started_side_effect,
+            "retry_safety": started_retry_safety,
         });
         let terminal_type = match result["status"].as_str() {
             Some("succeeded") => "run.succeeded",
@@ -528,6 +587,27 @@ fn text_output(value: &str, exit_code: u8, stderr: bool) -> ProcessOutput {
     }
 }
 
+fn contains_sensitive_option(arguments: &[OsString]) -> bool {
+    const SENSITIVE: [&str; 6] = [
+        "--input",
+        "--authorization-grant",
+        "--cursor",
+        "--session",
+        "--target",
+        "--grant",
+    ];
+    arguments.iter().any(|argument| {
+        argument.to_str().is_some_and(|argument| {
+            SENSITIVE.iter().any(|flag| {
+                argument == *flag
+                    || argument
+                        .strip_prefix(flag)
+                        .is_some_and(|suffix| suffix.starts_with('='))
+            })
+        })
+    })
+}
+
 fn clap_output(error: clap::Error) -> ProcessOutput {
     let mut output = error.to_string().into_bytes();
     if !output.ends_with(b"\n") {
@@ -571,10 +651,13 @@ fn exit_code_for(status: &str, error_kind: Option<&str>) -> u8 {
         3
     } else if error_kind.starts_with("target.")
         || error_kind.starts_with("app.")
+        || error_kind.starts_with("semantic.")
+        || error_kind.starts_with("session.")
         || matches!(
             leaf,
             "sessionExpired" | "cursorExpired" | "snapshotExpired" | "referenceNotFound"
         )
+        || matches!(error_kind, "action.policyDenied" | "action.conflict")
     {
         4
     } else if error_kind == "action.outcomeUnknown" {

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/cli/v1/catalog.schema.json",
+  "title": "AppPilotKit CLI v1 Semantic Catalog data",
+  "$defs": {
+    "schemaHandle": {
+      "type": "object",
+      "required": ["digest", "id", "revision"],
+      "properties": {
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^schema_[A-Za-z0-9._~-]{8,120}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "catalogIdentity": {
+      "type": "object",
+      "required": ["generation", "id"],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^catalog_[A-Za-z0-9._~-]{8,120}$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "catalogItem": {
+      "type": "object",
+      "required": ["declaration_revision", "id", "kind"],
+      "properties": {
+        "declaration_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "kind": {
+          "enum": ["action", "resource"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "list": {
+      "type": "object",
+      "required": ["capabilities", "catalog"],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/catalogItem"
+          }
+        },
+        "catalog": {
+          "$ref": "#/$defs/catalogIdentity"
+        }
+      },
+      "additionalProperties": false
+    },
+    "resourceShow": {
+      "type": "object",
+      "required": ["declaration_revision", "id", "kind", "value_schema"],
+      "properties": {
+        "declaration_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "input_schema": {
+          "$ref": "#/$defs/schemaHandle"
+        },
+        "kind": {
+          "const": "resource"
+        },
+        "value_schema": {
+          "$ref": "#/$defs/schemaHandle"
+        }
+      },
+      "additionalProperties": false
+    },
+    "actionPolicy": {
+      "type": "object",
+      "required": ["authorization", "retry_safety"],
+      "properties": {
+        "authorization": {
+          "enum": ["destructive_authorization", "none"]
+        },
+        "retry_safety": {
+          "enum": ["no_automatic_retry", "retry_with_proof_only"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "actionShow": {
+      "type": "object",
+      "required": ["declaration_revision", "id", "input_schema", "kind", "policy"],
+      "properties": {
+        "declaration_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "input_schema": {
+          "$ref": "#/$defs/schemaHandle"
+        },
+        "kind": {
+          "const": "action"
+        },
+        "policy": {
+          "$ref": "#/$defs/actionPolicy"
+        }
+      },
+      "additionalProperties": false
+    },
+    "show": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/resourceShow"
+        },
+        {
+          "$ref": "#/$defs/actionShow"
+        }
+      ]
+    },
+    "schema": {
+      "type": "object",
+      "required": ["document", "schema"],
+      "properties": {
+        "document": {
+          "type": "object",
+          "required": ["$schema", "$id"],
+          "properties": {
+            "$schema": {
+              "const": "https://json-schema.org/draft/2020-12/schema"
+            },
+            "$id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": true
+        },
+        "schema": {
+          "$ref": "#/$defs/schemaHandle"
+        }
+      },
+      "additionalProperties": false
+    },
+    "query": {
+      "type": "object",
+      "required": ["bytes", "value", "value_schema"],
+      "properties": {
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "value": true,
+        "value_schema": {
+          "$ref": "#/$defs/schemaHandle"
+        }
+      },
+      "additionalProperties": false
+    },
+    "invoke": {
+      "type": "object",
+      "required": ["capability", "completed", "declaration_revision"],
+      "properties": {
+        "capability": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "maxLength": 128
+        },
+        "completed": {
+          "const": true
+        },
+        "declaration_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

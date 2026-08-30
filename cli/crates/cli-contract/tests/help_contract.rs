@@ -16,12 +16,14 @@ fn help_is_a_complete_safe_starting_map_for_an_agent() {
         "Bounded output:",
         "Recovery:",
         "fixture-cli doctor --output json --non-interactive",
+        "catalog list --cursor",
     ] {
         assert!(
             root.contains(required),
             "missing root help text: {required}"
         );
     }
+    assert!(!root.contains("does not invent cursor continuation commands"));
 
     let command = core.run(["fixture-cli", "schema", "show", "--help"]);
     assert_eq!(command.exit_code, 0);
@@ -51,4 +53,28 @@ fn version_is_plain_stdout_with_a_zero_exit() {
         String::from_utf8(output.stdout).unwrap(),
         "fixture-cli 0.1.0\n"
     );
+}
+
+#[test]
+fn catalog_help_describes_the_generic_surface_without_a_target_catalog() {
+    let core = CliCore::new(CliConfig::new("fixture-cli", "0.1.0")).expect("CLI initializes");
+    let help = core.run(["fixture-cli", "catalog", "invoke", "--help"]);
+    assert_eq!(help.exit_code, 0);
+    let help = String::from_utf8(help.stdout).expect("UTF-8 help");
+    for required in [
+        "Result schema: https://apppilotkit.dev/cli/v1/catalog.schema.json#/$defs/invoke",
+        "Side effect: app_mutation",
+        "Retry safety: requires_idempotency_key",
+        "--authorization-grant",
+        "--input",
+        "--session",
+        "--target",
+    ] {
+        assert!(
+            help.contains(required),
+            "missing catalog help text: {required}"
+        );
+    }
+    assert!(!help.contains("account.delete"));
+    assert!(!help.contains("config.current"));
 }

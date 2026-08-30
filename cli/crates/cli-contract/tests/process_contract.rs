@@ -17,12 +17,51 @@ fn discovery_is_self_contained_with_an_empty_and_poisoned_environment() {
             "--output",
             "json",
         ],
+        vec![
+            "schema",
+            "show",
+            "https://apppilotkit.dev/cli/v1/catalog.schema.json",
+            "--output",
+            "json",
+        ],
         vec!["doctor", "--output", "json", "--non-interactive"],
     ] {
         let output = isolated_command(&command)
             .output()
             .expect("fixture CLI runs");
         assert_successful_machine_output(&output);
+        let result: Value = serde_json::from_slice(&output.stdout).expect("Machine Result JSON");
+        if command[0] == "capabilities" {
+            let paths = result["data"]["commands"].as_array().expect("commands");
+            for expected in [
+                serde_json::json!(["catalog", "list"]),
+                serde_json::json!(["catalog", "show"]),
+                serde_json::json!(["catalog", "schema"]),
+                serde_json::json!(["catalog", "query"]),
+                serde_json::json!(["catalog", "invoke"]),
+            ] {
+                assert!(paths.iter().any(|command| command["path"] == expected));
+            }
+        }
+        if command.starts_with(&["schema", "list"]) {
+            assert!(
+                result["data"]["schemas"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|id| id == "https://apppilotkit.dev/cli/v1/catalog.schema.json")
+            );
+        }
+        if command.get(2) == Some(&"https://apppilotkit.dev/cli/v1/catalog.schema.json") {
+            assert_eq!(
+                result["data"]["schema_id"],
+                "https://apppilotkit.dev/cli/v1/catalog.schema.json"
+            );
+            assert_eq!(
+                result["data"]["schema"]["$id"],
+                "https://apppilotkit.dev/cli/v1/catalog.schema.json"
+            );
+        }
     }
 }
 
@@ -122,4 +161,57 @@ fn assert_successful_machine_output(output: &Output) {
     assert_eq!(result["status"], "succeeded");
     assert_eq!(result["side_effect"], "read_only");
     assert_eq!(result["retry_safety"], "safe");
+}
+
+#[test]
+fn catalog_list_fails_closed_in_an_isolated_environment() {
+    let output = isolated_command(&["catalog", "list", "--output", "json"])
+        .output()
+        .expect("fixture CLI runs");
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stderr.is_empty());
+    let result: Value = serde_json::from_slice(&output.stdout).expect("bare machine JSON stdout");
+    assert_eq!(result["status"], "failed");
+    assert_eq!(result["error"]["kind"], "session.selectionRequired");
+    assert_eq!(result["command"], serde_json::json!(["catalog", "list"]));
+}
+
+#[test]
+fn opaque_cursor_and_json_input_accept_unambiguous_hyphens_through_the_process_parser() {
+    let cursor = isolated_command(&["catalog", "list", "--cursor=-opaque", "--output", "json"])
+        .output()
+        .expect("fixture CLI parses a hyphen-leading cursor");
+    assert_eq!(cursor.status.code(), Some(4));
+    let cursor: Value = serde_json::from_slice(&cursor.stdout).expect("Machine Result JSON");
+    assert_eq!(cursor["error"]["kind"], "session.selectionRequired");
+
+    let input = isolated_command(&[
+        "catalog",
+        "query",
+        "--capability",
+        "config.current",
+        "--declaration-revision",
+        "1",
+        "--value-schema-id",
+        "schema_value0001",
+        "--value-schema-revision",
+        "1",
+        "--value-schema-digest",
+        "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "--input-schema-id",
+        "schema_input0001",
+        "--input-schema-revision",
+        "1",
+        "--input-schema-digest",
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "--input",
+        "-1",
+        "--output",
+        "json",
+    ])
+    .output()
+    .expect("fixture CLI parses a negative JSON number");
+    assert_eq!(input.status.code(), Some(4));
+    let input: Value = serde_json::from_slice(&input.stdout).expect("Machine Result JSON");
+    assert_eq!(input["error"]["kind"], "session.selectionRequired");
 }

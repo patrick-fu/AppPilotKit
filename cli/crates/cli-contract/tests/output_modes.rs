@@ -11,7 +11,7 @@ fn one_capabilities_outcome_has_deterministic_human_json_and_jsonl_renderings() 
     assert!(human.stderr.is_empty());
     assert_eq!(
         String::from_utf8(human.stdout).expect("UTF-8 human output"),
-        "Installed CLI contract 1.0 for fixture-cli 0.1.0: 6 commands, 8 schemas.\n"
+        "Installed CLI contract 1.0 for fixture-cli 0.1.0: 12 commands, 9 schemas.\n"
     );
 
     let document = core.run(["fixture-cli", "capabilities", "--output=json"]);
