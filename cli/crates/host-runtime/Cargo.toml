@@ -1,0 +1,17 @@
+[package]
+name = "apppilotkit-host-runtime"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+apppilotkit-transport-crypto-core = { path = "../../../transport/crypto-core" }
+base64 = "=0.22.1"
+libc = "=0.2.189"
+minicbor = { version = "=0.25.1", features = ["std"] }
+sha2 = "=0.10.9"

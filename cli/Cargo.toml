@@ -1,3 +1,10 @@
 [workspace]
-members = ["crates/cli-contract", "spikes/rust-foundation"]
+members = [
+    "crates/cli-contract",
+    "crates/host-runtime",
+    "crates/apple-simulator-adapter",
+    "crates/android-emulator-adapter",
+    "crates/production-composition",
+    "spikes/rust-foundation",
+]
 resolver = "3"
