@@ -346,7 +346,10 @@ every transport side effect:
 5. return one typed, redacted cleanup outcome to the CLI renderer.
 
 Do not terminate, force-stop, uninstall, reboot, or remove another invocation's
-forward during ordinary cleanup. Explicit relaunch/reset commands own those
+forward during ordinary cleanup. The Android pre-bootstrap exception is a
+confirmed Activity start followed by failed listener/forward/connect setup:
+the adapter uses an independent bounded cleanup deadline to force-stop only
+the exact selected package. Explicit relaunch/reset commands own all other
 side effects and must describe them in the CLI contract. A stale forward,
 missing endpoint, EOF, pairing/authorization change, or USB detach triggers
 rediscovery and a new explicit bootstrap—not transparent mutation replay.

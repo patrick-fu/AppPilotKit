@@ -1,0 +1,2 @@
+    1 /sbin/launchd
+75916 /Library/Developer/CoreSimulator/Volumes/iOS_23D8133/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.3.simruntime/Contents/Resources/RuntimeRoot/Applications/Preferences.app/Preferences

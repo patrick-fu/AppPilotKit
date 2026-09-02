@@ -1,0 +1,19 @@
+{
+    "com.apple.Preferences" = {
+        ApplicationType = System;
+        Bundle = "file:///Applications/Preferences.app/";
+        CFBundleIdentifier = "com.apple.Preferences";
+        Path = "/Applications/Preferences.app";
+    };
+    "com.apple.mobilesafari" = {
+        ApplicationType = System;
+        CFBundleIdentifier = "com.apple.mobilesafari";
+        GroupContainers = {
+            "group.com.apple.safari" = "file:///Users/example/group.com.apple.safari/";
+        };
+        Tags = (
+            system,
+            browser
+        );
+    };
+}

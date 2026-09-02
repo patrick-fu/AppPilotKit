@@ -1,0 +1,36 @@
+[package]
+name = "apppilotkit-production-composition"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+autobins = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "apppilotkit"
+path = "src/bin/apppilotkit.rs"
+
+[[bin]]
+name = "apppilotkit-broker"
+path = "src/bin/apppilotkit-broker.rs"
+
+[[bin]]
+name = "apppilotkit-target-prepare"
+path = "src/bin/apppilotkit-target-prepare.rs"
+
+[dependencies]
+apppilotkit-android-emulator-adapter = { path = "../android-emulator-adapter" }
+apppilotkit-apple-simulator-adapter = { path = "../apple-simulator-adapter" }
+apppilotkit-cli-contract = { path = "../cli-contract" }
+apppilotkit-host-runtime = { path = "../host-runtime" }
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
+signal-hook = { version = "=0.4.4", default-features = false }
+
+[dev-dependencies]
+apppilotkit-transport-crypto-core = { path = "../../../transport/crypto-core" }
+minicbor = { version = "=0.25.1", features = ["std"] }

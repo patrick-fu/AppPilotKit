@@ -1,0 +1,32 @@
+{
+  "xcode_version": "26.2 (17C52)",
+  "simulator_runtime": "iOS 26.3 (23D8133)",
+  "device_udid": "E28F8D8E-6211-4287-930B-1C2785D75A37",
+  "initial_state": "Shutdown",
+  "restored_state": "Shutdown",
+  "pgrep": {
+    "argv": ["simctl", "spawn", "E28F8D8E-6211-4287-930B-1C2785D75A37", "/usr/bin/pgrep", "-fl", "Preferences"],
+    "exit_code": 3,
+    "stderr": "sysmon request failed with error: sysmond service not found\npgrep: Cannot get process list\n"
+  },
+  "repeat_launch": {
+    "first_pid": 75916,
+    "second_pid": 75916,
+    "meaning": "ordinary simctl launch can return an already-running process"
+  },
+  "proxy_kill": {
+    "proxy_pid": 76375,
+    "target_pid": 76390,
+    "signal": "SIGKILL",
+    "target_remained_running": true
+  },
+  "darwin_process_identity": {
+    "launch_pid": 5692,
+    "proc_bsdinfo_size": 136,
+    "proc_pidinfo_written": 136,
+    "start_seconds": 1788239193,
+    "start_microseconds": 728720,
+    "proc_pidpath": "/Library/Developer/CoreSimulator/Volumes/iOS_23D8133/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.3.simruntime/Contents/Resources/RuntimeRoot/Applications/Preferences.app/Preferences",
+    "restored_state": "Shutdown"
+  }
+}

@@ -1,0 +1,17 @@
+[package]
+name = "apppilotkit-android-emulator-adapter"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+apppilotkit-host-runtime = { path = "../host-runtime" }
+base64 = "=0.22.1"
+getrandom = "=0.3.4"
+libc = "=0.2.189"
+sha2 = "=0.10.9"
