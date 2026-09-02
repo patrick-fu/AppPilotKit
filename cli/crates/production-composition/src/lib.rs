@@ -1091,45 +1091,58 @@ mod tests {
     }
 
     #[test]
-    fn client_read_uses_the_deadline_remaining_after_a_slow_request_write() {
-        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
-        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
-            Some(client_stream),
-        ))));
-        let server = thread::spawn(move || {
-            // Fill the client send buffer first so its request write consumes
-            // most of the deadline before this peer begins to drain it.
-            thread::sleep(Duration::from_millis(100));
-            let mut packet = Vec::new();
-            server_stream
-                .read_to_end(&mut packet)
-                .expect("exchange request");
-            let request = apppilotkit_host_runtime::decode_request_packet(&packet)
-                .expect("decode exchange request");
-            thread::sleep(Duration::from_millis(150));
-            let response = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
-                target_token: [6; 32],
-                process_generation: 1,
-                listener_epoch: 1,
-                issued_at_unix_ms: 100,
-                expires_at_unix_ms: 30_100,
-            });
-            let _ = server_stream.write_all(
-                &encode_success_packet(request.request_id(), response).expect("prepare success"),
-            );
+    fn client_read_does_not_reset_the_deadline_after_a_complete_request() {
+        let (mut client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let response = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
+            target_token: [6; 32],
+            process_generation: 1,
+            listener_epoch: 1,
+            issued_at_unix_ms: 100,
+            expires_at_unix_ms: 30_100,
         });
-        let started = Instant::now();
-        let error = client
-            .call_until(
-                large_exchange_request(vec![0x74; 2 * 1024 * 1024]),
-                started + Duration::from_millis(200),
-            )
-            .expect_err("a late response must not receive a fresh IPC read budget");
+        server_stream
+            .write_all(&encode_success_packet([0x73; 16], response).expect("prepare success"))
+            .expect("write complete response");
+        server_stream
+            .shutdown(std::net::Shutdown::Write)
+            .expect("close complete response");
 
-        assert!(started.elapsed() < Duration::from_secs(1));
+        let error =
+            read_control_result(&mut client_stream, Instant::now() - Duration::from_secs(1))
+                .expect_err("an expired read deadline must reject an already-complete response");
         assert_eq!(error.stage, apppilotkit_host_runtime::ErrorStage::Ipc);
         assert_eq!(error.kind, ErrorKind::Timeout);
-        server.join().expect("server");
+    }
+
+    #[test]
+    fn half_closed_partial_request_is_rejected_without_a_response() {
+        let (mut client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let broker = Arc::new(
+            SessionBroker::new(Arc::new(RejectAdapter), Arc::new(RejectAdapter))
+                .expect("broker construction"),
+        );
+        let server = thread::spawn(move || serve_connection(&mut server_stream, broker.as_ref()));
+        let packet = encode_request_packet(&large_exchange_request(vec![0x74; 1_024]))
+            .expect("prepare exchange request");
+        client_stream
+            .write_all(&packet[..packet.len() / 2])
+            .expect("write partial request");
+        client_stream
+            .shutdown(std::net::Shutdown::Write)
+            .expect("half-close partial request");
+        let mut response = Vec::new();
+        client_stream
+            .read_to_end(&mut response)
+            .expect("read server close");
+
+        assert!(
+            server.join().expect("server must not panic").is_err(),
+            "server must reject a partial control packet"
+        );
+        assert!(
+            response.is_empty(),
+            "a partial request must not receive a control response"
+        );
     }
 
     #[test]
