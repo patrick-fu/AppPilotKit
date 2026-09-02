@@ -57,10 +57,23 @@ const SESSION_OPEN_CAPABILITY: &str = "semantic.catalog";
 #[derive(Clone)]
 pub struct BrokerControlClient {
     connector: Arc<dyn ControlConnector>,
+    clock: Arc<dyn MonotonicClock>,
 }
 
 trait ControlConnector: Send + Sync {
     fn connect(&self) -> io::Result<UnixStream>;
+}
+
+trait MonotonicClock: Send + Sync {
+    fn now(&self) -> Instant;
+}
+
+struct SystemMonotonicClock;
+
+impl MonotonicClock for SystemMonotonicClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
 }
 
 #[derive(Default)]
@@ -124,12 +137,21 @@ impl BrokerControlClient {
     pub fn current_user() -> Self {
         Self {
             connector: Arc::new(CurrentUserConnector::new(installed_broker_path())),
+            clock: Arc::new(SystemMonotonicClock),
         }
     }
 
     #[cfg(test)]
     fn with_connector(connector: Arc<dyn ControlConnector>) -> Self {
-        Self { connector }
+        Self::with_connector_and_clock(connector, Arc::new(SystemMonotonicClock))
+    }
+
+    #[cfg(test)]
+    fn with_connector_and_clock(
+        connector: Arc<dyn ControlConnector>,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
+        Self { connector, clock }
     }
 
     fn call(&self, request: ControlRequest) -> Result<ControlSuccess, ControlFailure> {
@@ -144,11 +166,12 @@ impl BrokerControlClient {
     ) -> Result<ControlSuccess, ControlFailure> {
         let mut stream = self.connector.connect().map_err(io_failure)?;
         let packet = encode_request_packet(&request)?;
-        write_control_packet(&mut stream, &packet, deadline).map_err(io_failure)?;
+        write_control_packet_with_clock(&mut stream, &packet, deadline, self.clock.as_ref())
+            .map_err(io_failure)?;
         stream
             .shutdown(std::net::Shutdown::Write)
             .map_err(io_failure)?;
-        let result = read_control_result(&mut stream, deadline)?;
+        let result = read_control_result_with_clock(&mut stream, deadline, self.clock.as_ref())?;
         match result {
             ControlResult::Success { request_id, result } if request_id == request.request_id() => {
                 Ok(result)
@@ -181,8 +204,11 @@ fn control_deadline(deadline_unix_ms: u64) -> Instant {
         .unwrap_or_else(Instant::now)
 }
 
-fn remaining_timeout(deadline: Instant) -> io::Result<Duration> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
+fn remaining_timeout_with_clock(
+    deadline: Instant,
+    clock: &dyn MonotonicClock,
+) -> io::Result<Duration> {
+    let remaining = deadline.saturating_duration_since(clock.now());
     // macOS socket timeouts reject sub-millisecond precision. Rounding down
     // keeps every read and write inside the shared absolute deadline.
     let milliseconds = u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX);
@@ -200,11 +226,20 @@ fn remaining_timeout(deadline: Instant) -> io::Result<Duration> {
 /// write, so it must be recomputed after every partial write.
 fn write_control_packet(
     stream: &mut UnixStream,
-    mut packet: &[u8],
+    packet: &[u8],
     deadline: Instant,
 ) -> io::Result<()> {
+    write_control_packet_with_clock(stream, packet, deadline, &SystemMonotonicClock)
+}
+
+fn write_control_packet_with_clock(
+    stream: &mut UnixStream,
+    mut packet: &[u8],
+    deadline: Instant,
+    clock: &dyn MonotonicClock,
+) -> io::Result<()> {
     while !packet.is_empty() {
-        stream.set_write_timeout(Some(remaining_timeout(deadline)?))?;
+        stream.set_write_timeout(Some(remaining_timeout_with_clock(deadline, clock)?))?;
         match stream.write(packet) {
             Ok(0) => {
                 return Err(io::Error::new(
@@ -239,9 +274,10 @@ fn io_failure(error: io::Error) -> ControlFailure {
     ControlFailure::ipc(reason)
 }
 
-fn read_control_result(
+fn read_control_result_with_clock(
     stream: &mut UnixStream,
     deadline: Instant,
+    clock: &dyn MonotonicClock,
 ) -> Result<ControlResult, ControlFailure> {
     // macOS rejects some valid-looking dynamically recomputed SO_RCVTIMEO
     // values. Nonblocking reads plus a monotonic deadline avoid granting a
@@ -250,7 +286,7 @@ fn read_control_result(
     let mut packet = Vec::new();
     let mut buffer = [0_u8; IPC_BUFFER];
     loop {
-        let remaining = remaining_timeout(deadline).map_err(io_failure)?;
+        let remaining = remaining_timeout_with_clock(deadline, clock).map_err(io_failure)?;
         let read = match stream.read(&mut buffer) {
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                 thread::sleep(remaining.min(IPC_READ_POLL_INTERVAL));
@@ -1048,6 +1084,22 @@ mod tests {
         }
     }
 
+    struct RequestWriteClock {
+        before_write: Instant,
+        after_write: Instant,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl MonotonicClock for RequestWriteClock {
+        fn now(&self) -> Instant {
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                self.before_write
+            } else {
+                self.after_write
+            }
+        }
+    }
+
     fn large_exchange_request(message: Vec<u8>) -> ControlRequest {
         ControlRequest::Exchange(Request {
             request_id: [0x73; 16],
@@ -1091,25 +1143,44 @@ mod tests {
     }
 
     #[test]
-    fn client_read_does_not_reset_the_deadline_after_a_complete_request() {
-        let (mut client_stream, mut server_stream) = UnixStream::pair().expect("pair");
-        let response = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
-            target_token: [6; 32],
-            process_generation: 1,
-            listener_epoch: 1,
-            issued_at_unix_ms: 100,
-            expires_at_unix_ms: 30_100,
-        });
+    fn client_call_does_not_refresh_deadline_after_writing_a_complete_request() {
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let request = large_exchange_request(b"deadline-test-request".to_vec());
+        let ControlRequest::Exchange(exchange) = &request else {
+            panic!("expected exchange request");
+        };
+        let response =
+            ControlSuccess::ExchangeComplete(apppilotkit_host_runtime::ExchangeComplete {
+                target_token: exchange.body.target_token,
+                session_id: exchange.body.session_id.clone(),
+                process_generation: exchange.body.process_generation,
+                listener_epoch: exchange.body.listener_epoch,
+                message: b"deadline-test-response".to_vec(),
+                message_sha256: Sha256::digest(b"deadline-test-response").into(),
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            });
         server_stream
-            .write_all(&encode_success_packet([0x73; 16], response).expect("prepare success"))
+            .write_all(
+                &encode_success_packet(request.request_id(), response).expect("exchange success"),
+            )
             .expect("write complete response");
         server_stream
             .shutdown(std::net::Shutdown::Write)
             .expect("close complete response");
 
-        let error =
-            read_control_result(&mut client_stream, Instant::now() - Duration::from_secs(1))
-                .expect_err("an expired read deadline must reject an already-complete response");
+        let started = Instant::now();
+        let deadline = started + Duration::from_secs(1);
+        let client = BrokerControlClient::with_connector_and_clock(
+            Arc::new(PairConnector(Mutex::new(Some(client_stream)))),
+            Arc::new(RequestWriteClock {
+                before_write: started,
+                after_write: deadline + Duration::from_millis(1),
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }),
+        );
+        let error = client
+            .call_until(request, deadline)
+            .expect_err("a completed response must not receive a refreshed read deadline");
         assert_eq!(error.stage, apppilotkit_host_runtime::ErrorStage::Ipc);
         assert_eq!(error.kind, ErrorKind::Timeout);
     }
