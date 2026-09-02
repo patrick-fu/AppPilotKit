@@ -1091,22 +1091,31 @@ mod tests {
     }
 
     #[test]
-    fn client_read_uses_the_deadline_remaining_after_a_slow_request_write() {
+    fn client_read_does_not_reset_the_deadline_after_a_complete_request() {
         let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
         let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
             Some(client_stream),
         ))));
+        let deadline = Instant::now() + Duration::from_millis(300);
+        let (request_received_tx, request_received_rx) = std::sync::mpsc::channel();
+        let (response_written_tx, response_written_rx) = std::sync::mpsc::channel();
         let server = thread::spawn(move || {
-            // Fill the client send buffer first so its request write consumes
-            // most of the deadline before this peer begins to drain it.
-            thread::sleep(Duration::from_millis(100));
             let mut packet = Vec::new();
             server_stream
                 .read_to_end(&mut packet)
-                .expect("exchange request");
+                .expect("complete exchange request");
             let request = apppilotkit_host_runtime::decode_request_packet(&packet)
-                .expect("decode exchange request");
-            thread::sleep(Duration::from_millis(150));
+                .expect("decode complete exchange request");
+            request_received_tx
+                .send(Instant::now())
+                .expect("record complete request");
+            thread::sleep(
+                deadline.saturating_duration_since(Instant::now()) + Duration::from_millis(20),
+            );
+            assert!(
+                Instant::now() >= deadline,
+                "response must be written only after the shared deadline"
+            );
             let response = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
                 target_token: [6; 32],
                 process_generation: 1,
@@ -1117,19 +1126,60 @@ mod tests {
             let _ = server_stream.write_all(
                 &encode_success_packet(request.request_id(), response).expect("prepare success"),
             );
+            response_written_tx
+                .send(Instant::now())
+                .expect("record late response");
         });
-        let started = Instant::now();
         let error = client
-            .call_until(
-                large_exchange_request(vec![0x74; 2 * 1024 * 1024]),
-                started + Duration::from_millis(200),
-            )
+            .call_until(large_exchange_request(vec![0x74; 1_024]), deadline)
             .expect_err("a late response must not receive a fresh IPC read budget");
 
-        assert!(started.elapsed() < Duration::from_secs(1));
         assert_eq!(error.stage, apppilotkit_host_runtime::ErrorStage::Ipc);
         assert_eq!(error.kind, ErrorKind::Timeout);
+        assert!(
+            request_received_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("server receives the complete request before the deadline")
+                < deadline - Duration::from_millis(100)
+        );
+        assert!(
+            response_written_rx
+                .recv_timeout(Duration::from_millis(100))
+                .expect("server writes the response after the deadline")
+                >= deadline
+        );
         server.join().expect("server");
+    }
+
+    #[test]
+    fn half_closed_partial_request_is_rejected_without_a_response() {
+        let (mut client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let broker = Arc::new(
+            SessionBroker::new(Arc::new(RejectAdapter), Arc::new(RejectAdapter))
+                .expect("broker construction"),
+        );
+        let server = thread::spawn(move || serve_connection(&mut server_stream, broker.as_ref()));
+        let packet = encode_request_packet(&large_exchange_request(vec![0x74; 1_024]))
+            .expect("prepare exchange request");
+        client_stream
+            .write_all(&packet[..packet.len() / 2])
+            .expect("write partial request");
+        client_stream
+            .shutdown(std::net::Shutdown::Write)
+            .expect("half-close partial request");
+        let mut response = Vec::new();
+        client_stream
+            .read_to_end(&mut response)
+            .expect("read server close");
+
+        assert!(
+            server.join().expect("server must not panic").is_err(),
+            "server must reject a partial control packet"
+        );
+        assert!(
+            response.is_empty(),
+            "a partial request must not receive a control response"
+        );
     }
 
     #[test]
