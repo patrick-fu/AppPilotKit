@@ -101,6 +101,7 @@ dependencies = [
  "apppilotkit-cli-contract",
  "apppilotkit-host-runtime",
  "apppilotkit-transport-crypto-core",
+ "libc",
  "minicbor",
  "serde_json",
  "sha2 0.10.9",
