@@ -146,18 +146,16 @@ fn prepare_literal_decodes_to_typed_request() {
         encode_request_packet(&request).expect("canonical request encoder"),
         packet
     );
-    match request {
-        ControlRequest::Prepare(request) => {
-            assert_eq!(
-                request.request_id,
-                [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-            );
-            assert_eq!(request.deadline_unix_ms, 10_000);
-            assert_eq!(request.body.device_selector, "sim");
-            assert_eq!(request.body.app_artifact, "/tmp/App.app");
-        }
-        other => panic!("unexpected request: {other:?}"),
-    }
+    let ControlRequest::Prepare(request) = request else {
+        panic!("expected prepare request");
+    };
+    assert_eq!(
+        request.request_id,
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    );
+    assert_eq!(request.deadline_unix_ms, 10_000);
+    assert_eq!(request.body.device_selector, "sim");
+    assert_eq!(request.body.app_artifact, "/tmp/App.app");
 }
 
 #[test]

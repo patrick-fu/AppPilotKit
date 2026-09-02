@@ -1098,7 +1098,7 @@ mod tests {
         ))));
         let deadline = Instant::now() + Duration::from_millis(300);
         let (request_received_tx, request_received_rx) = std::sync::mpsc::channel();
-        let (response_written_tx, response_written_rx) = std::sync::mpsc::channel();
+        let (response_attempted_tx, response_attempted_rx) = std::sync::mpsc::channel();
         let server = thread::spawn(move || {
             let mut packet = Vec::new();
             server_stream
@@ -1123,12 +1123,12 @@ mod tests {
                 issued_at_unix_ms: 100,
                 expires_at_unix_ms: 30_100,
             });
+            response_attempted_tx
+                .send(Instant::now())
+                .expect("record late response attempt");
             let _ = server_stream.write_all(
                 &encode_success_packet(request.request_id(), response).expect("prepare success"),
             );
-            response_written_tx
-                .send(Instant::now())
-                .expect("record late response");
         });
         let error = client
             .call_until(large_exchange_request(vec![0x74; 1_024]), deadline)
@@ -1143,9 +1143,9 @@ mod tests {
                 < deadline
         );
         assert!(
-            response_written_rx
+            response_attempted_rx
                 .recv_timeout(Duration::from_millis(100))
-                .expect("server writes the response after the deadline")
+                .expect("server attempts the response after the deadline")
                 >= deadline
         );
         server.join().expect("server");
