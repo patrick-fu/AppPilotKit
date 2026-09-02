@@ -1,0 +1,9 @@
+{
+  "id": "d0-1-packet-cap-plus-one",
+  "validator": "broker_packet",
+  "input": {
+    "declared_cbor_length": 67109121
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "oversize"
+}

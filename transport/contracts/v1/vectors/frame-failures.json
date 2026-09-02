@@ -1,0 +1,500 @@
+{
+  "oracle": "parser_lifecycle_contract",
+  "schema_version": "1.0",
+  "suite": "frame-failures",
+  "test_only_material": {
+    "classification": "TEST-ONLY",
+    "material": {
+      "process_bootstrap_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141"
+    },
+    "production_use": "forbidden"
+  },
+  "vectors": [
+    {
+      "canonical_input": {
+        "elapsed_ms": 2000,
+        "raw_outer_hex": "00"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "timeout",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22656c61707365645f6d73223a323030302c227261775f6f757465725f686578223a223030227d",
+      "expected_transcript_sha256": "sha256:a2ded2a2a70b2309682ecb382143df406f3e7d1815124dfe939344b537cd8676",
+      "id": "outer-header-timeout",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "outer_frame"
+    },
+    {
+      "canonical_input": {
+        "elapsed_ms": 2000,
+        "raw_outer_hex": "00100102"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "timeout",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22656c61707365645f6d73223a323030302c227261775f6f757465725f686578223a223030313030313032227d",
+      "expected_transcript_sha256": "sha256:b3c46cf979df2189176d28df373aaa197208c6bb9bf20bc5f2a0d12ef4ca2ea8",
+      "id": "outer-body-timeout",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "outer_frame"
+    },
+    {
+      "canonical_input": {
+        "elapsed_ms": 0,
+        "raw_outer_hex": "0000"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22656c61707365645f6d73223a302c227261775f6f757465725f686578223a2230303030227d",
+      "expected_transcript_sha256": "sha256:7828265839b7a89fc952b2bffd201efd412d069d83afd00003d9c789693600e9",
+      "id": "outer-zero-length",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "outer_frame"
+    },
+    {
+      "canonical_input": {
+        "declared_ciphertext_length": 65536
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226465636c617265645f636970686572746578745f6c656e677468223a36353533367d",
+      "expected_transcript_sha256": "sha256:6c893d637bdbb3d69c975aa91b7b2bba31a17435568ad5d403c8b7218d85b874",
+      "id": "outer-oversize",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "outer_frame"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "0103000000000001000000"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b2230313033303030303030303030303031303030303030225d7d",
+      "expected_transcript_sha256": "sha256:a70370dd8e73ba62f183d96b52be29dd2ccb24b72f10cd967fd65e0eead10e04",
+      "id": "record-truncated-header",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "0103000000000001000000000001"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b2230313033303030303030303030303031303030303030303030303031225d7d",
+      "expected_transcript_sha256": "sha256:cc567bc8014d747a9267fd2d6ad376d7728c6102439092de99c990460082a9c5",
+      "id": "record-trailing-after-end",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "0102000000000000000000040506",
+          "01010000000000060000000001020304"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b2230313032303030303030303030303030303030303030303430353036222c223031303130303030303030303030303630303030303030303031303230333034225d7d",
+      "expected_transcript_sha256": "sha256:16fbe80b85091a339438087549af99b353a64382cb09ef3ae99ac7ecb24267ff",
+      "id": "record-reorder",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "0101000000000004000000000102",
+          "01020000000000000000000304"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b2230313031303030303030303030303034303030303030303030313032222c223031303230303030303030303030303030303030303030333034225d7d",
+      "expected_transcript_sha256": "sha256:fd4c382e8be08306711edbe188acd5266acf2d44e0d9213d0bf31b5b902a65eb",
+      "id": "record-gap",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "010100000000000400000000010203",
+          "0102000000000000000000020304"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b22303130313030303030303030303030343030303030303030303130323033222c2230313032303030303030303030303030303030303030303230333034225d7d",
+      "expected_transcript_sha256": "sha256:9c168ca44f9af5d2d82304c8bfaa7fcf5925cbf35f561ccb4e0700d8f1c4e343",
+      "id": "record-overlap",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "0101000000000004000000000102",
+          "0202000000000000000000020304"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b2230313031303030303030303030303034303030303030303030313032222c2230323032303030303030303030303030303030303030303230333034225d7d",
+      "expected_transcript_sha256": "sha256:919c277f9145d30f0f00b48cc599796a2ae40f525167c350f1a9450bf6097980",
+      "id": "record-interleave",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "incoming_application_role": "target",
+        "max_message_bytes": 16777216,
+        "owner": "broker",
+        "records_hex": [
+          "01030000000000010000000001"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22696e636f6d696e675f6170706c69636174696f6e5f726f6c65223a22746172676574222c226d61785f6d6573736167655f6279746573223a31363737373231362c226f776e6572223a2262726f6b6572222c227265636f7264735f686578223a5b223031303330303030303030303030303130303030303030303031225d7d",
+      "expected_transcript_sha256": "sha256:55a108bcc32a68f59afcdb60fd2709bda0259e7b0b0596d2dd49d015ce99dbb3",
+      "id": "half-duplex-peer-turn",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "01040000000000010000000001"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b223031303430303030303030303030303130303030303030303031225d7d",
+      "expected_transcript_sha256": "sha256:c9e7a4fd329601cc662bac8dcb2cb1fb129f93c56b37e8fcc7bd4d89172e821c",
+      "id": "record-unknown-flags",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "01030001000000010000000001"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b223031303330303031303030303030303130303030303030303031225d7d",
+      "expected_transcript_sha256": "sha256:b5de8d4152d09c0183a254909f011c6494adb4e7fa6de805094e22d1862cf527",
+      "id": "record-nonzero-reserved",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 16777216,
+        "records_hex": [
+          "01020000000000010000000001"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "sequenceViolation",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a31363737373231362c227265636f7264735f686578223a5b223031303230303030303030303030303130303030303030303031225d7d",
+      "expected_transcript_sha256": "sha256:e220636e38d273f0fd97dbcf3d2212650120c934a502e7687faf6424e6d0cb87",
+      "id": "record-non-start-total-len",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "record_reassembly"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 8192,
+        "records_hex": [
+          "040300000000000700000000a30001010a0201"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a383139322c227265636f7264735f686578223a5b223034303330303030303030303030303730303030303030306133303030313031306130323031225d7d",
+      "expected_transcript_sha256": "sha256:967b34b057ea2edfb84d8031b4ff49a0359fa709f4fce337ecc7f7fd830b157c",
+      "id": "close-record-valid",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 8192,
+        "records_hex": [
+          "040300000000000700000000a30001010e0201"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a383139322c227265636f7264735f686578223a5b223034303330303030303030303030303730303030303030306133303030313031306530323031225d7d",
+      "expected_transcript_sha256": "sha256:a6fbb5c8ff6fde14e776abaa26ad20363aa55878f9c6236603047a6251cd8b47",
+      "id": "close-record-invalid-reason",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 8192,
+        "records_hex": [
+          "040300000000000500000000a20001010a"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a383139322c227265636f7264735f686578223a5b2230343033303030303030303030303035303030303030303061323030303130313061225d7d",
+      "expected_transcript_sha256": "sha256:5774c63137c461f911d14f714a2eae58e2430d5748ac16868fe5b4ae417fea19",
+      "id": "close-record-missing-handoff",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "max_message_bytes": 8192,
+        "records_hex": [
+          "040300000000000800000000a3000101180a0201"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d61785f6d6573736167655f6279746573223a383139322c227265636f7264735f686578223a5b2230343033303030303030303030303038303030303030303061333030303130313138306130323031225d7d",
+      "expected_transcript_sha256": "sha256:f8131e22388b440c982c70b8e4a8e2958e276597445266f0ed7d6636d19ce3c2",
+      "id": "close-record-non-shortest-cbor",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "raw_hex": "a200010002"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b227261775f686578223a2261323030303130303032227d",
+      "expected_transcript_sha256": "sha256:8e98462d2cd954b75852f4593b175acbe2857ee913268bdd5b337e893985abcb",
+      "id": "cbor-duplicate-key",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "deterministic_cbor"
+    },
+    {
+      "canonical_input": {
+        "raw_hex": "1817"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b227261775f686578223a2231383137227d",
+      "expected_transcript_sha256": "sha256:2a29b05f36edef6266c188ac0656e6d8ff97d813486be4a568c20b475fc95df1",
+      "id": "cbor-non-shortest-integer",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "deterministic_cbor"
+    },
+    {
+      "canonical_input": {
+        "raw_hex": "a201000000"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "malformed",
+      "expected_error_kind": "sessionExpired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b227261775f686578223a2261323031303030303030227d",
+      "expected_transcript_sha256": "sha256:52838bf4d59c504b0fb64d3153e573d270526e8f85b9ac61e081e2b5e6a987cf",
+      "id": "cbor-out-of-order-key",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "deterministic_cbor"
+    },
+    {
+      "canonical_input": {
+        "total_len": 16777217
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22746f74616c5f6c656e223a31363737373231377d",
+      "expected_transcript_sha256": "sha256:27a7b90c273dbb4084519492baf3bf9fcc067a460c21671ae316447adf604fcd",
+      "id": "request-oversize",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "total_len": 67108865
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22746f74616c5f6c656e223a36373130383836357d",
+      "expected_transcript_sha256": "sha256:bceea2940f82b63b845bbbd4f3e3715fe309d19a7c28ccf4cebd5d2b5bc2fc17",
+      "id": "response-oversize",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "total_len": 65537
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22746f74616c5f6c656e223a36353533377d",
+      "expected_transcript_sha256": "sha256:ab603ecaab2a41f140d10e60670a31fe2c6c20027a27b75798c65c64b1eb5052",
+      "id": "session-open-oversize",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "accepted_records": 4294967295,
+        "next_record": 4294967296
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "recordLimit",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2261636365707465645f7265636f726473223a343239343936373239352c226e6578745f7265636f7264223a343239343936373239367d",
+      "expected_transcript_sha256": "sha256:75a033343c3144d8e7b42e89bddb2b53d4f8f165ed6c339d62d7fdbe717babe2",
+      "id": "nonce-record-limit",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "accepted_plaintext_bytes": 1099511627775,
+        "next_plaintext_bytes": 1
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "recordLimit",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2261636365707465645f706c61696e746578745f6279746573223a313039393531313632373737352c226e6578745f706c61696e746578745f6279746573223a317d",
+      "expected_transcript_sha256": "sha256:17104eb61c164bca4ef4a3489a6f4124733b1088d0b4cdf69e310c08730f8839",
+      "id": "plaintext-byte-limit",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    }
+  ]
+}

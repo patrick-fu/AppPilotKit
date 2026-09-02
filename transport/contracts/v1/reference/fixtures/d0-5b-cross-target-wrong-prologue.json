@@ -1,0 +1,10 @@
+{
+  "id": "d0-5b-cross-target-wrong-prologue",
+  "validator": "noise_cross_binding",
+  "input": {
+    "binding_vector": "vectors/binding-replay-failures.json",
+    "case_id": "cross-target"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "authenticationFailed"
+}

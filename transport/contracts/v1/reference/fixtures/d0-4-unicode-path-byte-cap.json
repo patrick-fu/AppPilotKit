@@ -1,0 +1,11 @@
+{
+  "id": "d0-4-unicode-path-byte-cap",
+  "validator": "semantic_encoding",
+  "input": {
+    "kind": "utf8_bytes",
+    "value": "/界界界界",
+    "max_bytes": 12
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "oversize"
+}

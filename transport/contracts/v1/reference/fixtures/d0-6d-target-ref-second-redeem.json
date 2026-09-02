@@ -1,0 +1,14 @@
+{
+  "id": "d0-6d-target-ref-second-redeem",
+  "validator": "lifecycle",
+  "input": {
+    "issued_at_unix_ms": 1000,
+    "expires_at_unix_ms": 31000,
+    "events": [
+      { "at_unix_ms": 2000, "operation": "target_only_open", "dispatch_boundary_crossed": false },
+      { "at_unix_ms": 3000, "operation": "target_only_open", "dispatch_boundary_crossed": false }
+    ]
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "stale"
+}

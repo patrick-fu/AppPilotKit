@@ -1,0 +1,19 @@
+{
+  "id": "d0-7-missing-helper-and-smoke-artifact",
+  "validator": "evidence_completeness",
+  "input": {
+    "installed_names": ["apppilotkit", "apppilotkit-broker"],
+    "fixed_canary_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "execution_canary_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "surface_names": [
+      "argv", "environment", "activity_extras", "stdout", "stderr",
+      "product_logs", "diagnostics", "machine_result", "next_actions",
+      "artifacts", "production_build_artifact", "release_build_artifact"
+    ],
+    "all_surfaces_have_scanner": true,
+    "all_surfaces_have_artifact_hash": true,
+    "complete": true
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "malformed"
+}

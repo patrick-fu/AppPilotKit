@@ -1,0 +1,51 @@
+{
+  "algorithm": "SHA-256",
+  "files": [
+    {
+      "bytes": 21550,
+      "path": "vectors/binding-replay-failures.json",
+      "sha256": "3bd15b6dfc59d9d93bd1ec374942a208b64e8e20b4c7dadbb9242eca8b66524f"
+    },
+    {
+      "bytes": 1042,
+      "path": "vectors/bootstrap-android-descriptor.json",
+      "sha256": "3fb81ad77fc7a785a63362233f59399b754edcc4a5f78404437db3921d188d0e"
+    },
+    {
+      "bytes": 5307,
+      "path": "vectors/bootstrap-nk-success.json",
+      "sha256": "9553d39647f0c15a113b296aa278addd0c824f5979b690867b370453efb9ea43"
+    },
+    {
+      "bytes": 3578,
+      "path": "vectors/broker-ipc-boundaries.json",
+      "sha256": "108ad0e0a4ee734b5f17561a6f3a450b290d533498a3dea8e16d9e25648ab24b"
+    },
+    {
+      "bytes": 23642,
+      "path": "vectors/frame-failures.json",
+      "sha256": "28c7e2f03cc4b6e13b81e165ea33723fef0a74badd4ae8a8e710a295b4051ccc"
+    },
+    {
+      "bytes": 4412,
+      "path": "vectors/ios-app-artifact-tree.json",
+      "sha256": "f8ad5ba6a2a93fa601a509dc6265ea0230b8199bf5cdafaf6c33f45e4ea185ee"
+    },
+    {
+      "bytes": 108473,
+      "path": "vectors/lifecycle-dispatch.json",
+      "sha256": "917f7c6ab7b7682ed9f602c0c90ab20b936785204a97efd5b9830cc6c31698e6"
+    },
+    {
+      "bytes": 41617,
+      "path": "vectors/secret-surface-canaries.json",
+      "sha256": "124a9c3db427141c04cfc276643d06699ca371b7d1f4f4685cce50ca420f83ec"
+    },
+    {
+      "bytes": 6924,
+      "path": "vectors/session-nnpsk0-success.json",
+      "sha256": "fc075081fef6db214c97f35665089b8097b25490011a9ec6e7d77f1c9ef675aa"
+    }
+  ],
+  "schema_version": "1.0"
+}

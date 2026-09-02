@@ -1,0 +1,29 @@
+[package]
+name = "apppilotkit-transport-ffi"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+apppilotkit-transport-crypto-core = { path = ".." }
+jni-sys = "=0.4.1"
+zeroize = "=1.9.0"
+
+[dev-dependencies]
+minicbor = { version = "=0.25.1", features = ["std"] }
+sha2 = "=0.10.9"
+
+[workspace]
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"

@@ -1,0 +1,10 @@
+{
+  "id": "cross-generation",
+  "validator": "deterministic_cbor",
+  "input": {
+    "binding_vector": "vectors/binding-replay-failures.json",
+    "case_id": "cross-generation"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "authenticationFailed"
+}

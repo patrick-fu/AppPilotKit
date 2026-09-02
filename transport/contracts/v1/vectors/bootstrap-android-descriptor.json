@@ -1,0 +1,22 @@
+{
+  "canonical_input": {
+    "launch_descriptor_cbor_hex": "a900010101025051515151515151515151515151515151035820717171717171717171717171717171717171717171717171717171717171717104582081818181818181818181818181818181818181818181818181818181818181810558207b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f1306a100782e61707070696c6f746b69742d616e64726f69642d626f6f7473747261702d30313233343536373839616263646566071b000001b8dac5b400085820791b63ed11406e77475fafbf092c8dc786d728ed0773d7662373741dea079404",
+    "launch_endpoint": {
+      "localabstract_name": "apppilotkit-android-bootstrap-0123456789abcdef"
+    },
+    "launch_platform": "android_emulator"
+  },
+  "expected": {
+    "close_reason": null,
+    "result": "accepted"
+  },
+  "oracle": "independent-deterministic-cbor",
+  "schema_version": "1.0",
+  "shared_bootstrap_vector": "vectors/bootstrap-nk-success.json",
+  "suite": "bootstrap-android-descriptor",
+  "test_only_material": {
+    "classification": "TEST-ONLY",
+    "material": {},
+    "production_use": "forbidden"
+  }
+}

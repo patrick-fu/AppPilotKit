@@ -1,0 +1,9 @@
+{
+  "id": "cbor-depth-limit",
+  "validator": "deterministic_cbor",
+  "input": {
+    "raw_hex": "818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818181818100"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "malformed"
+}

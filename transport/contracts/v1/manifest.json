@@ -1,0 +1,257 @@
+{
+  "algorithm": "SHA-256",
+  "files": [
+    {
+      "bytes": 17063,
+      "path": "../../../docs/adr/0009-private-broker-bootstrap-and-target-transport.md",
+      "sha256": "5d2ad2da367dfc99c7c3b0b0560f3dede13c5560a1f937e22dafd81f0e4a1c95"
+    },
+    {
+      "bytes": 33826,
+      "path": "README.md",
+      "sha256": "76a50f23d7bfb60202555a63775ce1bb79b855373f48ed5cddad5ee4925921cc"
+    },
+    {
+      "bytes": 2594,
+      "path": "dependencies.lock.json",
+      "sha256": "d64178243f832c0486f25efc486a18a970d6bfb3de79d55a705f938ddaabfebb"
+    },
+    {
+      "bytes": 45648,
+      "path": "reference/Cargo.lock",
+      "sha256": "d1472cc157b4e40bde41957ba258b520dfc13d2cf3ff1804f1d58594250c358e"
+    },
+    {
+      "bytes": 700,
+      "path": "reference/Cargo.toml",
+      "sha256": "a67186be1a3838190c66fb7b30b908d0e53f4272a2de55ed4857305b95c7e02e"
+    },
+    {
+      "bytes": 198,
+      "path": "reference/fixtures/d0-1-packet-cap-plus-one.json",
+      "sha256": "92648f39b837621e6ea73df113f99dc1b3f269e04f1b6ba77a323a32352d77cc"
+    },
+    {
+      "bytes": 539,
+      "path": "reference/fixtures/d0-2-impossible-catalog-list-evidence.json",
+      "sha256": "22fbe490a16d4850aedd76cda671fdde029e3344be0dd070d93ba746a88cfd66"
+    },
+    {
+      "bytes": 414,
+      "path": "reference/fixtures/d0-3-client-rewritten-ready-timestamps.json",
+      "sha256": "131fd577a83d3ba75ebff50c625f5e8c52e5cb0f6024419586b2b23249276065"
+    },
+    {
+      "bytes": 243,
+      "path": "reference/fixtures/d0-4-unicode-path-byte-cap.json",
+      "sha256": "eb94f5abedbe6bb176688efe2ebd0e6036a835760a66116321ea3425736d1042"
+    },
+    {
+      "bytes": 746,
+      "path": "reference/fixtures/d0-4b-broker-json-cbor-roundtrip.json",
+      "sha256": "f9af498156a9a7a924bda0e52231e496d6796f723cf98ed2d4895324b024f668"
+    },
+    {
+      "bytes": 484,
+      "path": "reference/fixtures/d0-4c-error-message-byte-cap.json",
+      "sha256": "0db70caf2ddbd33da513b22bb7d8116e314ea1cb5e58c73445daf0f4104de560"
+    },
+    {
+      "bytes": 282,
+      "path": "reference/fixtures/d0-5-cross-binding-handshake-aead.json",
+      "sha256": "a4041d4f6d8f13baac56218c82bce6f0cd497e7f58ef4c4d6d5bfc71f341ae21"
+    },
+    {
+      "bytes": 280,
+      "path": "reference/fixtures/d0-5b-cross-target-wrong-prologue.json",
+      "sha256": "b72efbef85c08729377222b799f2f185cf0a07905f8114f917f5ef030eb318cf"
+    },
+    {
+      "bytes": 195,
+      "path": "reference/fixtures/d0-6a-cbor-duplicate-key.json",
+      "sha256": "9e7c04f0008cbd6de67faf6e10aa09a7dd0f8726503c42123bf73de353ef15c3"
+    },
+    {
+      "bytes": 216,
+      "path": "reference/fixtures/d0-6b-outer-frame-truncated.json",
+      "sha256": "5013aa92243eca3a6f6a9be669f34bf71afa1fcadd48895ceb2c296ffa209077"
+    },
+    {
+      "bytes": 301,
+      "path": "reference/fixtures/d0-6c-record-gap.json",
+      "sha256": "7a51699989d282b2a39f8107bb990eefc22afe5ba36a1d6cbf697826835238f1"
+    },
+    {
+      "bytes": 443,
+      "path": "reference/fixtures/d0-6d-target-ref-second-redeem.json",
+      "sha256": "1c388e000d9310f7c5c7b719b716370df5174b03c356aef399a5105790bc3b62"
+    },
+    {
+      "bytes": 975,
+      "path": "reference/fixtures/d0-6e-secret-surface-canary-hit.json",
+      "sha256": "b92ec4b21196dea6265e885381d2dc40553a590d3be1b034678deea1007c7a93"
+    },
+    {
+      "bytes": 884,
+      "path": "reference/fixtures/d0-6e2-secret-surface-both-canaries-absent.json",
+      "sha256": "9d9d4f77efedc515ca8adb3fc6ac81ffdf7f23bee33784913112a8f53493479b"
+    },
+    {
+      "bytes": 323,
+      "path": "reference/fixtures/d0-6f-immediate-finished-replay.json",
+      "sha256": "d0dad80d3bff6769011e8c9b591324d248dff07581e067fe154a897d7711defa"
+    },
+    {
+      "bytes": 801,
+      "path": "reference/fixtures/d0-7-missing-helper-and-smoke-artifact.json",
+      "sha256": "29994c99f9655f91402a4b9d3e891595f1a454bc84dc86a29bf5386063b00e62"
+    },
+    {
+      "bytes": 1012,
+      "path": "reference/fixtures/d0-7b-zero-byte-build-artifacts.json",
+      "sha256": "78c007afb6c1639813658503b54e295608da1f7a89ed215083b4ddca99668904"
+    },
+    {
+      "bytes": 309,
+      "path": "reference/fixtures/d0-final-cbor-depth.json",
+      "sha256": "a200ac8275b887e7398c3e08e02db1fc8ba226521556516d3f6e0105c7b6d1e3"
+    },
+    {
+      "bytes": 973,
+      "path": "reference/fixtures/d0-final-dishonest-canary-count.json",
+      "sha256": "ca9d29cde79e56a7c08db619e5d4872bef598867d1cac904fee5b567219530ca"
+    },
+    {
+      "bytes": 792,
+      "path": "reference/fixtures/d0-final-inconsistent-evidence.json",
+      "sha256": "4687e52029d3a84421b093cd89f888e0e49409afdb85c50604e5ef92a6bdd9fc"
+    },
+    {
+      "bytes": 266,
+      "path": "reference/fixtures/d0-final-validator-reroute.json",
+      "sha256": "364174078a013be78156881cc554ffd5ff1517c45451e8c4f2fa690e1d9f4e4d"
+    },
+    {
+      "bytes": 309,
+      "path": "reference/fixtures/d0-final-wrong-psk.json",
+      "sha256": "688c91c32604064acdb916e18617cbdee52b85106d109e32ab95a84e7bc6ec14"
+    },
+    {
+      "bytes": 120319,
+      "path": "reference/src/main.rs",
+      "sha256": "1cca99294f2ea60ea411d99124ceb69d833c8880737666c7752085dd3778108d"
+    },
+    {
+      "bytes": 169637,
+      "path": "reference/src/verifier.rs",
+      "sha256": "ce6cb41902213c2afc62cb0c3c3c83a8663c51aad25726f99c2750358a8704ca"
+    },
+    {
+      "bytes": 23204,
+      "path": "reference/tests/d0_four_p1_remediation.rs",
+      "sha256": "d022fd521d72c87d3aef4c2d0b65836fd9cdf0d7612e50232b6ea38294a5022a"
+    },
+    {
+      "bytes": 7726,
+      "path": "reference/tests/final_remediation.rs",
+      "sha256": "3818aef0a3f8425cc640fe3b6847c3e4ced18b7d23168aac26033948335230d9"
+    },
+    {
+      "bytes": 17598,
+      "path": "reference/tests/ios_app_artifact_tree.rs",
+      "sha256": "7cdd2e2a845eaa06626a3931f35a754289c4ea0679e1fc0618a01ebee690cf39"
+    },
+    {
+      "bytes": 2840,
+      "path": "reference/tests/remediation.rs",
+      "sha256": "ec1cb7ee2008dbd1e83cbb217ffb1a022e8b8a69ff22cc6a2ca5fa9c7b101425"
+    },
+    {
+      "bytes": 12454,
+      "path": "schema/broker-control.schema.json",
+      "sha256": "de84b5d9cf74f9f5e289182d6bbb5836d0354c9549161902bf4f175dbf7e472b"
+    },
+    {
+      "bytes": 3055,
+      "path": "schema/target-prepare.schema.json",
+      "sha256": "8b7380ed1ea6ad9510d0cc8c272ba0d8cfda85987d94f8a20f70d10fa19aefb0"
+    },
+    {
+      "bytes": 1326,
+      "path": "schema/target-ready.schema.json",
+      "sha256": "0c6416adbb2a2dfc4b9c0063abbbd5f139728141d70c9c048367a577432669e9"
+    },
+    {
+      "bytes": 19472,
+      "path": "schema/transport-evidence.schema.json",
+      "sha256": "50cdbf139b0c0bee380377417b8925bf5504c747528f3836ad2212145441a139"
+    },
+    {
+      "bytes": 21550,
+      "path": "vectors/binding-replay-failures.json",
+      "sha256": "3bd15b6dfc59d9d93bd1ec374942a208b64e8e20b4c7dadbb9242eca8b66524f"
+    },
+    {
+      "bytes": 1042,
+      "path": "vectors/bootstrap-android-descriptor.json",
+      "sha256": "3fb81ad77fc7a785a63362233f59399b754edcc4a5f78404437db3921d188d0e"
+    },
+    {
+      "bytes": 5307,
+      "path": "vectors/bootstrap-nk-success.json",
+      "sha256": "9553d39647f0c15a113b296aa278addd0c824f5979b690867b370453efb9ea43"
+    },
+    {
+      "bytes": 3578,
+      "path": "vectors/broker-ipc-boundaries.json",
+      "sha256": "108ad0e0a4ee734b5f17561a6f3a450b290d533498a3dea8e16d9e25648ab24b"
+    },
+    {
+      "bytes": 23642,
+      "path": "vectors/frame-failures.json",
+      "sha256": "28c7e2f03cc4b6e13b81e165ea33723fef0a74badd4ae8a8e710a295b4051ccc"
+    },
+    {
+      "bytes": 4412,
+      "path": "vectors/ios-app-artifact-tree.json",
+      "sha256": "f8ad5ba6a2a93fa601a509dc6265ea0230b8199bf5cdafaf6c33f45e4ea185ee"
+    },
+    {
+      "bytes": 108473,
+      "path": "vectors/lifecycle-dispatch.json",
+      "sha256": "917f7c6ab7b7682ed9f602c0c90ab20b936785204a97efd5b9830cc6c31698e6"
+    },
+    {
+      "bytes": 1600,
+      "path": "vectors/manifest.json",
+      "sha256": "87e74f2e4844dcf76ff52b42b53f1c309af884dd43e9bbdaf08d7a6c47376343"
+    },
+    {
+      "bytes": 41617,
+      "path": "vectors/secret-surface-canaries.json",
+      "sha256": "124a9c3db427141c04cfc276643d06699ca371b7d1f4f4685cce50ca420f83ec"
+    },
+    {
+      "bytes": 6924,
+      "path": "vectors/session-nnpsk0-success.json",
+      "sha256": "fc075081fef6db214c97f35665089b8097b25490011a9ec6e7d77f1c9ef675aa"
+    },
+    {
+      "bytes": 3685,
+      "path": "wire/bootstrap.cddl",
+      "sha256": "9d9b5077fad469870aa737e0e6ce5bbf6c08ed2db0ce08e46703fb2c94157dac"
+    },
+    {
+      "bytes": 5564,
+      "path": "wire/broker-ipc.cddl",
+      "sha256": "7373b7635156ae14d0308834f6438f4a1b2cd1051f8b605419c59127ec596897"
+    },
+    {
+      "bytes": 3531,
+      "path": "wire/session.cddl",
+      "sha256": "f76f21f5c8464c685dfc4448bd4f6c4b33c8946ce648a51a3be0b0cb166ccf7c"
+    }
+  ],
+  "schema_version": "1.0",
+  "self_hash": "excluded_by_definition_to_avoid_a_self-referential_digest"
+}

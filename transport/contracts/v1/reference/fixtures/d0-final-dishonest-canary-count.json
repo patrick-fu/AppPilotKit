@@ -1,0 +1,22 @@
+{
+  "id": "secret-surface-dishonest-count",
+  "validator": "secret_surface_scanner",
+  "input": {
+    "surface": "stdout",
+    "scanner": "apppilotkit-reference-byte-scanner",
+    "scanner_version": "1.0",
+    "operation": "literal-byte-subsequence-count",
+    "fixed_canary_utf8": "APPPILOTKIT_TEST_ONLY_SECRET_CANARY_7f9c4b2e",
+    "execution_canary_utf8": "APPPILOTKIT_EXECUTION_CANARY_0123456789abcdef",
+    "artifact_identity": "fixture:dishonest-count",
+    "artifact_path": "reference/fixtures/dishonest-count.inline",
+    "artifact_sha256": "sha256:8f0a62fc75ea4f5b3d04befb6b49b2277751179e96b67c7beca8b4e85467c7aa",
+    "artifact_hex": "70726566697841505050494c4f544b49545f544553545f4f4e4c595f5345435245545f43414e4152595f3766396334623265737566666978",
+    "declared_byte_count": 56,
+    "declared_fixed_match_count": 0,
+    "declared_execution_match_count": 0,
+    "complete": true
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "internalError"
+}

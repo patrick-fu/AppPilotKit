@@ -1,0 +1,1127 @@
+{
+  "oracle": "pinned_case_state_machine",
+  "schema_version": "1.0",
+  "suite": "lifecycle-dispatch",
+  "test_only_material": {
+    "classification": "TEST-ONLY",
+    "material": {
+      "process_bootstrap_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141"
+    },
+    "production_use": "forbidden"
+  },
+  "vectors": [
+    {
+      "canonical_input": {
+        "broker_expires_at_unix_ms": 30000,
+        "broker_issued_at_unix_ms": 1000,
+        "now_unix_ms": 1001,
+        "projected_expires_at_unix_ms": 30000,
+        "projected_issued_at_unix_ms": 1000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "internalError",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2262726f6b65725f657870697265735f61745f756e69785f6d73223a33303030302c2262726f6b65725f6973737565645f61745f756e69785f6d73223a313030302c226e6f775f756e69785f6d73223a313030312c2270726f6a65637465645f657870697265735f61745f756e69785f6d73223a33303030302c2270726f6a65637465645f6973737565645f61745f756e69785f6d73223a313030307d",
+      "expected_transcript_sha256": "sha256:9cb1d07ff7a4453b2073cfb528aa1745d3cce4ca22145e863fa6649b90b0a2ff",
+      "id": "ready-timestamps-inconsistent-window",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "ready_timestamps"
+    },
+    {
+      "canonical_input": {
+        "broker_expires_at_unix_ms": 31000,
+        "broker_issued_at_unix_ms": 1000,
+        "now_unix_ms": 31000,
+        "projected_expires_at_unix_ms": 31000,
+        "projected_issued_at_unix_ms": 1000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2262726f6b65725f657870697265735f61745f756e69785f6d73223a33313030302c2262726f6b65725f6973737565645f61745f756e69785f6d73223a313030302c226e6f775f756e69785f6d73223a33313030302c2270726f6a65637465645f657870697265735f61745f756e69785f6d73223a33313030302c2270726f6a65637465645f6973737565645f61745f756e69785f6d73223a313030307d",
+      "expected_transcript_sha256": "sha256:b2ffa5ab3c58d4b6d3e5ed688728ffc83af86836504936d55db4add49d27f80c",
+      "id": "ready-timestamps-expired",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "ready_timestamps"
+    },
+    {
+      "canonical_input": {
+        "broker_expires_at_unix_ms": 31000,
+        "broker_issued_at_unix_ms": 1000,
+        "now_unix_ms": 1001,
+        "projected_expires_at_unix_ms": 31001,
+        "projected_issued_at_unix_ms": 1001
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "bindingMismatch",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2262726f6b65725f657870697265735f61745f756e69785f6d73223a33313030302c2262726f6b65725f6973737565645f61745f756e69785f6d73223a313030302c226e6f775f756e69785f6d73223a313030312c2270726f6a65637465645f657870697265735f61745f756e69785f6d73223a33313030312c2270726f6a65637465645f6973737565645f61745f756e69785f6d73223a313030317d",
+      "expected_transcript_sha256": "sha256:b8bdf58354cba6d44827358a2cbf3e80be4c22e54938e159b6b8d025995f8d85",
+      "id": "ready-timestamps-client-rewrite",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "ready_timestamps"
+    },
+    {
+      "canonical_input": {
+        "events": [
+          {
+            "at_unix_ms": 2000,
+            "dispatch_boundary_crossed": false,
+            "operation": "target_only_open"
+          },
+          {
+            "at_unix_ms": 3000,
+            "dispatch_boundary_crossed": false,
+            "operation": "target_only_open"
+          }
+        ],
+        "expires_at_unix_ms": 31000,
+        "issued_at_unix_ms": 1000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226576656e7473223a5b7b2261745f756e69785f6d73223a323030302c2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226f7065726174696f6e223a227461726765745f6f6e6c795f6f70656e227d2c7b2261745f756e69785f6d73223a333030302c2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226f7065726174696f6e223a227461726765745f6f6e6c795f6f70656e227d5d2c22657870697265735f61745f756e69785f6d73223a33313030302c226973737565645f61745f756e69785f6d73223a313030307d",
+      "expected_transcript_sha256": "sha256:3d85bce1207d704254a08b157982ee1ff1b6048d616725d1cc8806101d935076",
+      "id": "target-ref-second-redeem",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "lifecycle"
+    },
+    {
+      "canonical_input": {
+        "events": [
+          {
+            "at_unix_ms": 2000,
+            "dispatch_boundary_crossed": false,
+            "operation": "target_only_open"
+          },
+          {
+            "at_unix_ms": 3000,
+            "dispatch_boundary_crossed": false,
+            "operation": "exchange"
+          },
+          {
+            "at_unix_ms": 3000,
+            "dispatch_boundary_crossed": false,
+            "operation": "close"
+          }
+        ],
+        "expires_at_unix_ms": 31000,
+        "issued_at_unix_ms": 1000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226576656e7473223a5b7b2261745f756e69785f6d73223a323030302c2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226f7065726174696f6e223a227461726765745f6f6e6c795f6f70656e227d2c7b2261745f756e69785f6d73223a333030302c2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226f7065726174696f6e223a2265786368616e6765227d2c7b2261745f756e69785f6d73223a333030302c2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226f7065726174696f6e223a22636c6f7365227d5d2c22657870697265735f61745f756e69785f6d73223a33313030302c226973737565645f61745f756e69785f6d73223a313030307d",
+      "expected_transcript_sha256": "sha256:5d9cd44852c93cdca0011388ffba9314f0b16c4456fa729dc7a2cccb17ce1571",
+      "id": "atomic-close-wins-before-dispatch",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "lifecycle"
+    },
+    {
+      "canonical_input": {
+        "age_ms": 30000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226167655f6d73223a33303030307d",
+      "expected_transcript_sha256": "sha256:071191719ff4aa96c2ddc1f94879d68890110563f2ce6982a39d37d49276dfcc",
+      "id": "ready-reference-expired",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "idle_ms": 30000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2269646c655f6d73223a33303030307d",
+      "expected_transcript_sha256": "sha256:41ae2f468b38130c4f5f9705f206b82aabda152bb7fb9a6f28074e8ce5ec77a3",
+      "id": "session-idle-expired",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "idle_ms": 120000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2269646c655f6d73223a3132303030307d",
+      "expected_transcript_sha256": "sha256:a4b0aa3d91aac0d682022286fc40f82a279ca472aba5b8bc4f0eefdd2c806e98",
+      "id": "lease-idle-expired",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "age_ms": 900000
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226167655f6d73223a3930303030307d",
+      "expected_transcript_sha256": "sha256:5642870acf75790cd5b38fc9f00dcb08c4c17faecd6c1e14002ed83f21fe1bea",
+      "id": "lease-absolute-expired",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "elapsed_ms": 120000,
+        "missed": 4
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22656c61707365645f6d73223a3132303030302c226d6973736564223a347d",
+      "expected_transcript_sha256": "sha256:6548f15e04922a33faed20b39c7c620528f7e01ad2d4b3d35b9c1bfc1e33f1e4",
+      "id": "heartbeat-timeout",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "elapsed_ms": 2000,
+        "stage": "adapter_owned_forward"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "cleanupFailed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22656c61707365645f6d73223a323030302c227374616765223a22616461707465725f6f776e65645f666f7277617264227d",
+      "expected_transcript_sha256": "sha256:442a11bfb6652b1141ec14283a31bce7b57b64baa12a2c162a524474df0437f3",
+      "id": "cleanup-failure",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "dispatch_boundary_crossed": false,
+        "failure": "authentication_failed",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "authenticationFailed",
+      "expected_dispatch": "not_dispatched",
+      "expected_error_kind": "transport.authenticationRequired",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226661696c757265223a2261757468656e7469636174696f6e5f6661696c6564222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:9ad4982419ff8fbe67a5336ab1e1159c9543a9b0e7fee0c08b254d71a0e8b7d7",
+      "id": "pre-dispatch-authentication",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "dispatch_classification"
+    },
+    {
+      "canonical_input": {
+        "dispatch_boundary_crossed": false,
+        "failure": "deadline",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "timeout",
+      "expected_dispatch": "not_dispatched",
+      "expected_error_kind": "timeout",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2264697370617463685f626f756e646172795f63726f73736564223a66616c73652c226661696c757265223a22646561646c696e65222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:97bdd5d59d5e14a6e2852dbed332efa8108a20ce130ed26607b330dc2dd5c854",
+      "id": "pre-dispatch-timeout",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "dispatch_classification"
+    },
+    {
+      "canonical_input": {
+        "dispatch_boundary_crossed": true,
+        "failure": "deadline",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "timeout",
+      "expected_dispatch": "dispatched",
+      "expected_error_kind": "timeout",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2264697370617463685f626f756e646172795f63726f73736564223a747275652c226661696c757265223a22646561646c696e65222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:17feae796cbb79bf9ab3d537fcaa5c725a47eee26569737ffb282f7e0bf1e1a0",
+      "id": "post-dispatch-read-timeout",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "dispatch_classification"
+    },
+    {
+      "canonical_input": {
+        "dispatch_boundary_crossed": true,
+        "failure": "eof",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "peerClosed",
+      "expected_dispatch": "ambiguous",
+      "expected_error_kind": "action.outcomeUnknown",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2264697370617463685f626f756e646172795f63726f73736564223a747275652c226661696c757265223a22656f66222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:e34598b9a677a6d2ec68438df3ba0fe31d2f7bc9e3c93a14016b1dd11e9a587b",
+      "id": "post-dispatch-mutation-eof",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "dispatch_classification"
+    },
+    {
+      "canonical_input": {
+        "bootstrap_vector": "vectors/bootstrap-nk-success.json",
+        "launch_count": 1,
+        "live_lease": false,
+        "minted_refs": 1,
+        "nk_count": 1,
+        "observed_bootstrap_transcript_sha256": [
+          "sha256:2a77e0d1723325a4ec5a3df84028f2c3db7aaf722b1029ebcf7a5b1331a42908"
+        ],
+        "pbs_replaced": true,
+        "second_prepare_bootstrap_transcript_sha256": []
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22626f6f7473747261705f766563746f72223a22766563746f72732f626f6f7473747261702d6e6b2d737563636573732e6a736f6e222c226c61756e63685f636f756e74223a312c226c6976655f6c65617365223a66616c73652c226d696e7465645f72656673223a312c226e6b5f636f756e74223a312c226f627365727665645f626f6f7473747261705f7472616e7363726970745f736861323536223a5b227368613235363a32613737653064313732333332356134656335613364663834303238663263336462376161663732326231303239656263663761356231333331613432393038225d2c227062735f7265706c61636564223a747275652c227365636f6e645f707265706172655f626f6f7473747261705f7472616e7363726970745f736861323536223a5b5d7d",
+      "expected_transcript_sha256": "sha256:892f9ad303e3605fe80756b0d1cfb707348e6fe694e3e9ad25f2dd257b222762",
+      "id": "prepare-no-lease-launch-bootstrap",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "bootstrap_vector": "vectors/bootstrap-nk-success.json",
+        "broker_owned": true,
+        "eligible": true,
+        "epoch_match": true,
+        "generation_match": true,
+        "heartbeat_authenticated": true,
+        "launch_count": 0,
+        "live_lease": true,
+        "minted_refs": 1,
+        "nk_count": 0,
+        "observed_bootstrap_transcript_sha256": [
+          "sha256:2a77e0d1723325a4ec5a3df84028f2c3db7aaf722b1029ebcf7a5b1331a42908"
+        ],
+        "pbs_replaced": false,
+        "prepare_key_match": true,
+        "second_prepare_bootstrap_transcript_sha256": []
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22626f6f7473747261705f766563746f72223a22766563746f72732f626f6f7473747261702d6e6b2d737563636573732e6a736f6e222c2262726f6b65725f6f776e6564223a747275652c22656c696769626c65223a747275652c2265706f63685f6d61746368223a747275652c2267656e65726174696f6e5f6d61746368223a747275652c226865617274626561745f61757468656e74696361746564223a747275652c226c61756e63685f636f756e74223a302c226c6976655f6c65617365223a747275652c226d696e7465645f72656673223a312c226e6b5f636f756e74223a302c226f627365727665645f626f6f7473747261705f7472616e7363726970745f736861323536223a5b227368613235363a32613737653064313732333332356134656335613364663834303238663263336462376161663732326231303239656263663761356231333331613432393038225d2c227062735f7265706c61636564223a66616c73652c22707265706172655f6b65795f6d61746368223a747275652c227365636f6e645f707265706172655f626f6f7473747261705f7472616e7363726970745f736861323536223a5b5d7d",
+      "expected_transcript_sha256": "sha256:d802de5b946981b8acb3defd768692fe96603d1011122139f9fb72ff007ccae9",
+      "id": "prepare-eligible-owned-lease-mints-ref-no-launch-no-bootstrap",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "bootstrap_vector": "vectors/bootstrap-nk-success.json",
+        "broker_owned": true,
+        "eligible": true,
+        "epoch_match": true,
+        "generation_match": true,
+        "heartbeat_authenticated": true,
+        "launch_count": 0,
+        "live_lease": true,
+        "minted_refs": 0,
+        "nk_count": 0,
+        "observed_bootstrap_transcript_sha256": [
+          "sha256:2a77e0d1723325a4ec5a3df84028f2c3db7aaf722b1029ebcf7a5b1331a42908"
+        ],
+        "pbs_replaced": false,
+        "prepare_key_match": false,
+        "second_prepare_bootstrap_transcript_sha256": []
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "bindingMismatch",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22626f6f7473747261705f766563746f72223a22766563746f72732f626f6f7473747261702d6e6b2d737563636573732e6a736f6e222c2262726f6b65725f6f776e6564223a747275652c22656c696769626c65223a747275652c2265706f63685f6d61746368223a747275652c2267656e65726174696f6e5f6d61746368223a747275652c226865617274626561745f61757468656e74696361746564223a747275652c226c61756e63685f636f756e74223a302c226c6976655f6c65617365223a747275652c226d696e7465645f72656673223a302c226e6b5f636f756e74223a302c226f627365727665645f626f6f7473747261705f7472616e7363726970745f736861323536223a5b227368613235363a32613737653064313732333332356134656335613364663834303238663263336462376161663732326231303239656263663761356231333331613432393038225d2c227062735f7265706c61636564223a66616c73652c22707265706172655f6b65795f6d61746368223a66616c73652c227365636f6e645f707265706172655f626f6f7473747261705f7472616e7363726970745f736861323536223a5b5d7d",
+      "expected_transcript_sha256": "sha256:9be3fa429c7eb2eaedcc97f82736cff550a31747e1c3703cd7516e2ebfd39c43",
+      "id": "prepare-live-conflicting-build-fails-no-relaunch",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "bootstrap_vector": "vectors/bootstrap-nk-success.json",
+        "broker_owned": true,
+        "eligible": true,
+        "epoch_match": true,
+        "generation_match": true,
+        "heartbeat_authenticated": true,
+        "launch_count": 0,
+        "live_lease": true,
+        "minted_refs": 0,
+        "nk_count": 1,
+        "observed_bootstrap_transcript_sha256": [
+          "sha256:2a77e0d1723325a4ec5a3df84028f2c3db7aaf722b1029ebcf7a5b1331a42908"
+        ],
+        "pbs_replaced": true,
+        "prepare_key_match": true,
+        "second_prepare_bootstrap_transcript_sha256": [
+          "sha256:2a77e0d1723325a4ec5a3df84028f2c3db7aaf722b1029ebcf7a5b1331a42908"
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "bindingMismatch",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22626f6f7473747261705f766563746f72223a22766563746f72732f626f6f7473747261702d6e6b2d737563636573732e6a736f6e222c2262726f6b65725f6f776e6564223a747275652c22656c696769626c65223a747275652c2265706f63685f6d61746368223a747275652c2267656e65726174696f6e5f6d61746368223a747275652c226865617274626561745f61757468656e74696361746564223a747275652c226c61756e63685f636f756e74223a302c226c6976655f6c65617365223a747275652c226d696e7465645f72656673223a302c226e6b5f636f756e74223a312c226f627365727665645f626f6f7473747261705f7472616e7363726970745f736861323536223a5b227368613235363a32613737653064313732333332356134656335613364663834303238663263336462376161663732326231303239656263663761356231333331613432393038225d2c227062735f7265706c61636564223a747275652c22707265706172655f6b65795f6d61746368223a747275652c227365636f6e645f707265706172655f626f6f7473747261705f7472616e7363726970745f736861323536223a5b227368613235363a32613737653064313732333332356134656335613364663834303238663263336462376161663732326231303239656263663761356231333331613432393038225d7d",
+      "expected_transcript_sha256": "sha256:2a756bb1b7d9643ae16df2c9c1b3b8869a4deb11f5018e613124b976c9e0ce46",
+      "id": "prepare-reuse-new-bootstrap-transcript-rejected",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "lease_id_hex": "51515151515151515151515151515151",
+        "references": [
+          {
+            "expires_at": 31000,
+            "issued_at": 1000,
+            "redeem_at": 2000,
+            "redeem_count": 1,
+            "token_hex": "6161616161616161616161616161616161616161616161616161616161616161"
+          },
+          {
+            "expires_at": 31500,
+            "issued_at": 1500,
+            "redeem_at": 2500,
+            "redeem_count": 1,
+            "token_hex": "6262626262626262626262626262626262626262626262626262626262626262"
+          }
+        ]
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226c656173655f69645f686578223a223531353135313531353135313531353135313531353135313531353135313531222c227265666572656e636573223a5b7b22657870697265735f6174223a33313030302c226973737565645f6174223a313030302c2272656465656d5f6174223a323030302c2272656465656d5f636f756e74223a312c22746f6b656e5f686578223a2236313631363136313631363136313631363136313631363136313631363136313631363136313631363136313631363136313631363136313631363136313631227d2c7b22657870697265735f6174223a33313530302c226973737565645f6174223a313530302c2272656465656d5f6174223a323530302c2272656465656d5f636f756e74223a312c22746f6b656e5f686578223a2236323632363236323632363236323632363236323632363236323632363236323632363236323632363236323632363236323632363236323632363236323632227d5d7d",
+      "expected_transcript_sha256": "sha256:de3c674ddcdd844d8afa69ec584e87a49cfd37be10a18f7fe73f849e44268164",
+      "id": "two-fresh-refs-independent-redemption",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "m1_a_outer_hex": "00300791f592e9fdf04d44d7e0e23500b6ccf035be69667647589967e6b612a1315032e3e73aff62283f751dfe3798a65f14",
+        "m1_b_outer_hex": "003079fcf7f4c04d3277b425449f0d32209342908b4bc3772dfabe315f82034f6e64e4fd90a30f25164f9e873fbb56288fa5",
+        "noise_name": "Noise_NNpsk0_25519_ChaChaPoly_SHA256",
+        "prologue_cbor_hex": "8c7561707070696c6f746b69742e7472616e73706f7274016773657373696f6e000150515151515151515151515151515151511b000ffffffffffe8b011a010000001a040000001920005820bdbe3608b37171ada0f659120e3ae5a3a88436caec378f32ac783a0c685a9e11",
+        "psk_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+        "session_id_a": "session_test_agent_a_0001",
+        "session_id_b": "session_test_agent_b_0002"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226d315f615f6f757465725f686578223a2230303330303739316635393265396664663034643434643765306532333530306236636366303335626536393636373634373538393936376536623631326131333135303332653365373361666636323238336637353164666533373938613635663134222c226d315f625f6f757465725f686578223a2230303330373966636637663463303464333237376234323534343966306433323230393334323930386234626333373732646661626533313566383230333466366536346534666439306133306632353136346639653837336662623536323838666135222c226e6f6973655f6e616d65223a224e6f6973655f4e4e70736b305f32353531395f436861436861506f6c795f534841323536222c2270726f6c6f6775655f63626f725f686578223a22386337353631373037303730363936633666373436623639373432653734373236313665373337303666373237343031363737333635373337333639366636653030303135303531353135313531353135313531353135313531353135313531353135313531316230303066666666666666666666653862303131613031303030303030316130343030303030303139323030303538323062646265333630386233373137316164613066363539313230653361653561336138383433366361656333373866333261633738336130633638356139653131222c2270736b5f686578223a2234313431343134313431343134313431343134313431343134313431343134313431343134313431343134313431343134313431343134313431343134313431222c2273657373696f6e5f69645f61223a2273657373696f6e5f746573745f6167656e745f615f30303031222c2273657373696f6e5f69645f62223a2273657373696f6e5f746573745f6167656e745f625f30303032227d",
+      "expected_transcript_sha256": "sha256:ca6b4dff041ee64e33b108075776f2efec772cebe6652aa9b57eda04092060af",
+      "id": "two-agent-fresh-noise-and-target-session-ids",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "sessions": [
+          {
+            "id": "a",
+            "operation": "read",
+            "runtime_instance": "runtime-a",
+            "state": "complete"
+          },
+          {
+            "id": "b",
+            "operation": "read",
+            "runtime_instance": "runtime-b",
+            "state": "complete"
+          }
+        ],
+        "shared_action_coordinator": true,
+        "shared_catalog": true
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2273657373696f6e73223a5b7b226964223a2261222c226f7065726174696f6e223a2272656164222c2272756e74696d655f696e7374616e6365223a2272756e74696d652d61222c227374617465223a22636f6d706c657465227d2c7b226964223a2262222c226f7065726174696f6e223a2272656164222c2272756e74696d655f696e7374616e6365223a2272756e74696d652d62222c227374617465223a22636f6d706c657465227d5d2c227368617265645f616374696f6e5f636f6f7264696e61746f72223a747275652c227368617265645f636174616c6f67223a747275657d",
+      "expected_transcript_sha256": "sha256:30e42c2b089274d2ed5db06b8a55b920d5462a87a00866f4f9ba393b679c37b9",
+      "id": "concurrent-read-both-complete",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 0,
+        "sessions_after": {
+          "a": "closed",
+          "b": "open"
+        },
+        "terminal_scope": "session",
+        "terminal_session": "a"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a302c2273657373696f6e735f6166746572223a7b2261223a22636c6f736564222c2262223a226f70656e227d2c227465726d696e616c5f73636f7065223a2273657373696f6e222c227465726d696e616c5f73657373696f6e223a2261227d",
+      "expected_transcript_sha256": "sha256:bd69a0e38c4cdbbc11fb745633efa762356becbf99a846ae5e5b110c939d2480",
+      "id": "close-session-a-session-b-remains-open",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 0,
+        "reason": "idle_expiry",
+        "sessions_after": {
+          "a": "stale",
+          "b": "open"
+        },
+        "terminal_scope": "session",
+        "terminal_session": "a"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a302c22726561736f6e223a2269646c655f657870697279222c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a226f70656e227d2c227465726d696e616c5f73636f7065223a2273657373696f6e222c227465726d696e616c5f73657373696f6e223a2261227d",
+      "expected_transcript_sha256": "sha256:e4159fb6c74693101591ca96c82f53fa4b85ffbc9cb9cc4082b85ca26f8bda02",
+      "id": "session-a-idle-expiry-session-b-remains-open",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 0,
+        "reason": "authentication_failure",
+        "sessions_after": {
+          "a": "stale",
+          "b": "open"
+        },
+        "terminal_scope": "session",
+        "terminal_session": "a"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a302c22726561736f6e223a2261757468656e7469636174696f6e5f6661696c757265222c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a226f70656e227d2c227465726d696e616c5f73636f7065223a2273657373696f6e222c227465726d696e616c5f73657373696f6e223a2261227d",
+      "expected_transcript_sha256": "sha256:4d97a89ad344bdfb5bf05f04dff137c1ea26ca4d49e61634f92043327b23d4c6",
+      "id": "session-a-auth-failure-session-b-remains-open",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 2,
+        "cause": "lease_loss",
+        "refs_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "sessions_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "terminal_scope": "lease"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a322c226361757365223a226c656173655f6c6f7373222c22726566735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c227465726d696e616c5f73636f7065223a226c65617365227d",
+      "expected_transcript_sha256": "sha256:a92af4f2a88642a32bcd05c22ed0d4e6bc524f8dc196e3c38c0ef015d79ad0d8",
+      "id": "lease-loss-stales-both",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 2,
+        "cause": "epoch_loss",
+        "refs_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "sessions_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "terminal_scope": "lease"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a322c226361757365223a2265706f63685f6c6f7373222c22726566735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c227465726d696e616c5f73636f7065223a226c65617365227d",
+      "expected_transcript_sha256": "sha256:2693e25d7060d2f903601a0559c0146a8bbcf8669013f539e92c17dc8f863e41",
+      "id": "epoch-loss-stales-both",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 2,
+        "cause": "process_loss",
+        "refs_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "sessions_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "terminal_scope": "lease"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a322c226361757365223a2270726f636573735f6c6f7373222c22726566735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c227465726d696e616c5f73636f7065223a226c65617365227d",
+      "expected_transcript_sha256": "sha256:39d3e54964edf706f335fb65a5a930ff62dc1bd007c4678cad37bb4c06322dcc",
+      "id": "process-loss-stales-both",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "all_session_invalidate_calls": 2,
+        "cause": "broker_heartbeat_loss",
+        "refs_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "sessions_after": {
+          "a": "stale",
+          "b": "stale"
+        },
+        "terminal_scope": "lease"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "stale",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b22616c6c5f73657373696f6e5f696e76616c69646174655f63616c6c73223a322c226361757365223a2262726f6b65725f6865617274626561745f6c6f7373222c22726566735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c2273657373696f6e735f6166746572223a7b2261223a227374616c65222c2262223a227374616c65227d2c227465726d696e616c5f73636f7065223a226c65617365227d",
+      "expected_transcript_sha256": "sha256:6716d33aa5a6a400ab2c0eb9c1c9971c3e746e4d20b0a47d8cf832c6e924dcc2",
+      "id": "broker-heartbeat-loss-stales-both",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "argv": [
+          "/prefix/bin/apppilotkit",
+          "catalog",
+          "show",
+          "--capability",
+          "smoke.ready",
+          "--declaration-revision",
+          "1",
+          "--session=session_test_agent_a_0001",
+          "--target=target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+          "--output",
+          "json",
+          "--non-interactive"
+        ],
+        "capability": "smoke.ready",
+        "declaration_revision": 1,
+        "item_count": 1,
+        "next_action_id": "catalog.show",
+        "session": "session_test_agent_a_0001",
+        "target": "target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+        "truncated": false
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2261726776223a5b222f7072656669782f62696e2f61707070696c6f746b6974222c22636174616c6f67222c2273686f77222c222d2d6361706162696c697479222c22736d6f6b652e7265616479222c222d2d6465636c61726174696f6e2d7265766973696f6e222c2231222c222d2d73657373696f6e3d73657373696f6e5f746573745f6167656e745f615f30303031222c222d2d7461726765743d7461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c222d2d6f7574707574222c226a736f6e222c222d2d6e6f6e2d696e746572616374697665225d2c226361706162696c697479223a22736d6f6b652e7265616479222c226465636c61726174696f6e5f7265766973696f6e223a312c226974656d5f636f756e74223a312c226e6578745f616374696f6e5f6964223a22636174616c6f672e73686f77222c2273657373696f6e223a2273657373696f6e5f746573745f6167656e745f615f30303031222c22746172676574223a227461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c227472756e6361746564223a66616c73657d",
+      "expected_transcript_sha256": "sha256:bd02965c0247b5631c12fc194be2a5c43e9ef19572e27eaf6e161171fc60fa54",
+      "id": "catalog-complete-nonempty-projects-show",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "argv": [
+          "/prefix/bin/apppilotkit",
+          "catalog",
+          "list",
+          "--session=session_test_agent_a_0001",
+          "--target=target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+          "--cursor",
+          "cursor_opaque_2",
+          "--output",
+          "json",
+          "--non-interactive"
+        ],
+        "cursor": "cursor_opaque_2",
+        "item_count": 1,
+        "next_action_id": "catalog.list.continue",
+        "session": "session_test_agent_a_0001",
+        "target": "target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+        "truncated": true
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2261726776223a5b222f7072656669782f62696e2f61707070696c6f746b6974222c22636174616c6f67222c226c697374222c222d2d73657373696f6e3d73657373696f6e5f746573745f6167656e745f615f30303031222c222d2d7461726765743d7461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c222d2d637572736f72222c22637572736f725f6f70617175655f32222c222d2d6f7574707574222c226a736f6e222c222d2d6e6f6e2d696e746572616374697665225d2c22637572736f72223a22637572736f725f6f70617175655f32222c226974656d5f636f756e74223a312c226e6578745f616374696f6e5f6964223a22636174616c6f672e6c6973742e636f6e74696e7565222c2273657373696f6e223a2273657373696f6e5f746573745f6167656e745f615f30303031222c22746172676574223a227461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c227472756e6361746564223a747275657d",
+      "expected_transcript_sha256": "sha256:2943703f38cd9d60b2b50e90888acf11648ccdaa8a17dd2a1eca656446e25204",
+      "id": "catalog-truncated-projects-continuation",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "argv": [
+          "/prefix/bin/apppilotkit",
+          "catalog",
+          "list",
+          "--session=session_test_agent_a_0001",
+          "--target=target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+          "--output",
+          "json",
+          "--non-interactive"
+        ],
+        "item_count": 0,
+        "next_action_id": "catalog.list",
+        "session": "session_test_agent_a_0001",
+        "target": "target_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE",
+        "truncated": false
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b2261726776223a5b222f7072656669782f62696e2f61707070696c6f746b6974222c22636174616c6f67222c226c697374222c222d2d73657373696f6e3d73657373696f6e5f746573745f6167656e745f615f30303031222c222d2d7461726765743d7461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c222d2d6f7574707574222c226a736f6e222c222d2d6e6f6e2d696e746572616374697665225d2c226974656d5f636f756e74223a302c226e6578745f616374696f6e5f6964223a22636174616c6f672e6c697374222c2273657373696f6e223a2273657373696f6e5f746573745f6167656e745f615f30303031222c22746172676574223a227461726765745f59574668595746685957466859574668595746685957466859574668595746685957466859574668595745222c227472756e6361746564223a66616c73657d",
+      "expected_transcript_sha256": "sha256:936d4444e58bdaa611864e9c796a0e75df6edb04abf0d4ce857c25fc5bf0d87c",
+      "id": "catalog-complete-empty-projects-list-selector",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 0,
+        "request_end_emitted": false,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "not_handed_off",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a302c22726571756573745f656e645f656d6974746564223a66616c73652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:fc7ec96a85faa0747151297f2acd8cb20268f077bc9e1f616d1810927c58d75e",
+      "id": "broker-lost-pre-send-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 0,
+        "request_end_emitted": false,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "not_handed_off",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a302c22726571756573745f656e645f656d6974746564223a66616c73652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:79213daf5686b36875cc92631d4dc5f7354f43a3ac950a9cc2435513ee1a84d3",
+      "id": "broker-lost-pre-send-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 123,
+        "request_end_emitted": false,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "not_handed_off",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3132332c22726571756573745f656e645f656d6974746564223a66616c73652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:6887a59f87f2e7a19eaefb24261f57607e5471beaf9a2daeca4641d86d9703e4",
+      "id": "broker-lost-partial-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 123,
+        "request_end_emitted": false,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "not_handed_off",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3132332c22726571756573745f656e645f656d6974746564223a66616c73652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:c97a8aca1daa632e29b1dedeb750215e1f3783c3a27f242ce3a1bbb7fb350265",
+      "id": "broker-lost-partial-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:f5d61cf5c367509b9caa3355086ab7c0ca676c08a9981c56a6e0570728e0759c",
+      "id": "broker-lost-full-before-response-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "action.outcomeUnknown",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:14a2cfefd31095679bfe4362f9f9feb497eda0853f1e07ed4880e2be930ebb75",
+      "id": "broker-lost-full-before-response-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:f5d61cf5c367509b9caa3355086ab7c0ca676c08a9981c56a6e0570728e0759c",
+      "id": "broker-lost-safe-response-lost-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 0,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "action.outcomeUnknown",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a302c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:14a2cfefd31095679bfe4362f9f9feb497eda0853f1e07ed4880e2be930ebb75",
+      "id": "broker-lost-safe-response-lost-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 8,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "sessionExpired",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a382c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:3737cccfd2822301436a4c95bedbf6639e519f498ff3b91880e3cd1e6a9c43d0",
+      "id": "broker-lost-response-partial-eof-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "brokerLost",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 8,
+        "response_end_reassembled": false,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "brokerLost",
+      "expected_error_kind": "action.outcomeUnknown",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a2262726f6b65724c6f7374222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a382c22726573706f6e73655f656e645f7265617373656d626c6564223a66616c73652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:3d3d9e7625f42613a784ac353f53cd0913cba78a6ffda900359f8f36f263a549",
+      "id": "broker-lost-response-partial-eof-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "none",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 329,
+        "response_end_reassembled": true,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "read_only"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_error_kind": "none",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a226e6f6e65222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a3332392c22726573706f6e73655f656e645f7265617373656d626c6564223a747275652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a22726561645f6f6e6c79227d",
+      "expected_transcript_sha256": "sha256:9188afe68537d3e33777491c7db88d2f00c59e691b13d04a5cbfba2ab7c87810",
+      "id": "broker-response-complete-read",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    },
+    {
+      "canonical_input": {
+        "failure": "none",
+        "request_bytes_emitted": 246,
+        "request_end_emitted": true,
+        "request_outer_hex": "00f451103578f6732916f77ca2376eaae35d31f50ac90b6c25dcb57f531d2de550e059ff5238626684812da1eac7e063d335ef11e9aa5f1f1ffb412d8bfd3ab1a9618f02c503b9ac9cc353d62e3c3680ec4a67bc841ff0547e5d420940730cd50222d92f33608d6c1e52d7f11bde00275620c16a55e8d22d424c27a9f9fdd17cd8b3139fb835b4d00fea74c605383fcb59cc3adbdc337defa1cbb1edb1dc76bc8bcf7e9db3459cea073fdc8080baaebdb804dfffb1229eccffad7a447fa3e6d505b2794143078ca63a82ed31e47660e9e50e5a33f2f84d30d5836d65f673ffaf5cfad9ac5db0be3a795d6d15099372d30a67bbf91673",
+        "request_total_bytes": 246,
+        "response_bytes_reassembled": 329,
+        "response_end_reassembled": true,
+        "response_outer_hex": "0147ae250b6f5315e52d8a5be5d9716ef622d26e749200ea777ea5255b7df04382b5acbf96bd178000728cf67f78ea82ef562899eb6a4dc490cf3e2f10e501ec14613c40ae10ecc6c9598124031ffeafcba84c409122be9f52eed10b41f25e81720f22d8fb8760be6dab2699b544d0b53a4b0f46b833b0ffc4f177bebcf8cdfe3d2a5ea372c8865a0b96cf84c7072409d28a5e691b7c9f76a85bcf10c2f5af1c422b9654392aa254cf2334f394f00599ef2571a152f9433ee833fc482d3f7c00623e8fa8be05a624430e6a3ef43c32006208b624d5e5ecc3b29d293ffa108d09c2c943f52fa97046a1fc8176082e64f8ca24e9276a6d1e807a33780f39b61301e6433a51f6a41a6e56c00c976055dd245429fbd57cddaea32b57135e0bb2dbcb1293a17f065ed2d66c2f113d087a6efa09db07975f20b64ebfd4fd1d55500bbea1da4c06126a37c481",
+        "response_total_bytes": 329,
+        "session_vector": "vectors/session-nnpsk0-success.json",
+        "side_effect": "app_mutation"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "none",
+      "expected_error_kind": "none",
+      "expected_handoff": "handoff_possible_or_confirmed",
+      "expected_result": "accepted",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226661696c757265223a226e6f6e65222c22726571756573745f62797465735f656d6974746564223a3234362c22726571756573745f656e645f656d6974746564223a747275652c22726571756573745f6f757465725f686578223a22303066343531313033353738663637333239313666373763613233373665616165333564333166353061633930623663323564636235376635333164326465353530653035396666353233383632363638343831326461316561633765303633643333356566313165396161356631663166666234313264386266643361623161393631386630326335303362396163396363333533643632653363333638306563346136376263383431666630353437653564343230393430373330636435303232326439326633333630386436633165353264376631316264653030323735363230633136613535653864323264343234633237613966396664643137636438623331333966623833356234643030666561373463363035333833666362353963633361646264633333376465666131636262316564623164633736626338626366376539646233343539636561303733666463383038306261616562646238303464666666623132323965636366666164376134343766613365366435303562323739343134333037386361363361383265643331653437363630653965353065356133336632663834643330643538333664363566363733666661663563666164396163356462306265336137393564366431353039393337326433306136376262663931363733222c22726571756573745f746f74616c5f6279746573223a3234362c22726573706f6e73655f62797465735f7265617373656d626c6564223a3332392c22726573706f6e73655f656e645f7265617373656d626c6564223a747275652c22726573706f6e73655f6f757465725f686578223a2230313437616532353062366635333135653532643861356265356439373136656636323264323665373439323030656137373765613532353562376466303433383262356163626639366264313738303030373238636636376637386561383265663536323839396562366134646334393063663365326631306535303165633134363133633430616531306563633663393539383132343033316666656166636261383463343039313232626539663532656564313062343166323565383137323066323264386662383736306265366461623236393962353434643062353361346230663436623833336230666663346631373762656263663863646665336432613565613337326338383635613062393663663834633730373234303964323861356536393162376339663736613835626366313063326635616631633432326239363534333932616132353463663233333466333934663030353939656632353731613135326639343333656538333366633438326433663763303036323365386661386265303561363234343330653661336566343363333230303632303862363234643565356563633362323964323933666661313038643039633263393433663532666139373034366131666338313736303832653634663863613234653932373661366431653830376133333738306633396236313330316536343333613531663661343161366535366330306339373630353564643234353432396662643537636464616561333262353731333565306262326462636231323933613137663036356564326436366332663131336430383761366566613039646230373937356632306236346562666434666431643535353030626265613164613463303631323661333763343831222c22726573706f6e73655f746f74616c5f6279746573223a3332392c2273657373696f6e5f766563746f72223a22766563746f72732f73657373696f6e2d6e6e70736b302d737563636573732e6a736f6e222c22736964655f656666656374223a226170705f6d75746174696f6e227d",
+      "expected_transcript_sha256": "sha256:accae0391ef376736de57197976d686de58c731e0c19b26cfd620c1cd2bf858e",
+      "id": "broker-response-complete-invoke",
+      "oracle": "pinned_case_state_machine",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    }
+  ]
+}
