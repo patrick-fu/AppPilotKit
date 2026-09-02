@@ -1,0 +1,5 @@
+module CAppPilotKitTargetTransportTestBroker [system] {
+  header "include/apppilotkit_transport_test_broker.h"
+  link "apppilotkit_transport_test_broker"
+  export *
+}

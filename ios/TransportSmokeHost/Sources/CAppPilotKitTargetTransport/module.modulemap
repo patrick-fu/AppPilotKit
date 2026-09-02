@@ -1,0 +1,5 @@
+module CAppPilotKitTargetTransport [system] {
+  header "../../../../transport/crypto-core/ffi/include/apppilotkit_transport.h"
+  link "apppilotkit_transport_ffi"
+  export *
+}
