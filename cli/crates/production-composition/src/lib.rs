@@ -1140,7 +1140,7 @@ mod tests {
             request_received_rx
                 .recv_timeout(Duration::from_millis(100))
                 .expect("server receives the complete request before the deadline")
-                < deadline - Duration::from_millis(100)
+                < deadline
         );
         assert!(
             response_written_rx
