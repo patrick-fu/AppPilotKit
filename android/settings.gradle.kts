@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        google()
         gradlePluginPortal()
         mavenCentral()
     }
@@ -8,6 +9,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        google()
         mavenCentral()
     }
 }
@@ -15,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "apppilotkit-android"
 include(":semantic-registry")
 include(":protocol-runtime")
+include(":target-transport-internal")
+include(":transport-smoke-host")

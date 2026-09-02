@@ -4,6 +4,7 @@
 DerivedData/
 build/
 .gradle/
+android/.kotlin/
 local.properties
 *.iml
 .idea/
