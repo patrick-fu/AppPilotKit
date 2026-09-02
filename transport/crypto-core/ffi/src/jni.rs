@@ -1,10 +1,18 @@
 use super::*;
 use core::ffi::c_void;
 use jni_sys::{
-    JNI_ERR, JNI_OK, JNI_VERSION_1_6, JNIEnv, JNINativeMethod, JavaVM, jint, jlong, jobject,
+    JNI_ERR, JNI_OK, JNI_VERSION_1_6, JNIEnv, JNINativeInterface__1_6, JNINativeMethod, JavaVM,
+    jint, jlong, jobject,
 };
 
 const NATIVE_CLASS: &[u8] = b"dev/apppilotkit/transport/NativeTransport\0";
+
+unsafe fn jni_functions(env: &JNIEnv) -> Option<&JNINativeInterface__1_6> {
+    // JNI guarantees this table for a successful GetEnv call, but retain the
+    // null check at the FFI boundary before reading it.
+    let interface = unsafe { (*env).as_ref() }?;
+    Some(unsafe { &interface.v1_6 })
+}
 
 fn outcome_buffer_is_valid(address: *mut u8, capacity: u64) -> bool {
     !address.is_null()
@@ -18,10 +26,11 @@ unsafe fn direct_buffer(env: *mut JNIEnv, buffer: jobject) -> Option<(*mut u8, u
     if env.is_null() || buffer.is_null() {
         return None;
     }
-    let functions = unsafe { &**env };
-    let functions = unsafe { &functions.v1_6 };
-    let address = unsafe { (functions.GetDirectBufferAddress)(env, buffer) }.cast::<u8>();
-    let capacity = unsafe { (functions.GetDirectBufferCapacity)(env, buffer) };
+    let raw_env = env;
+    let env = unsafe { env.as_ref() }?;
+    let functions = unsafe { jni_functions(env) }?;
+    let address = unsafe { (functions.GetDirectBufferAddress)(raw_env, buffer) }.cast::<u8>();
+    let capacity = unsafe { (functions.GetDirectBufferCapacity)(raw_env, buffer) };
     if address.is_null() || capacity < 0 {
         None
     } else {
@@ -225,10 +234,14 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: *mut JavaVM, _reserved: *mut c_void
         {
             return JNI_ERR;
         }
-        let env = raw_env.cast::<JNIEnv>();
-        let functions = unsafe { &**env };
-        let functions = unsafe { &functions.v1_6 };
-        let class = unsafe { (functions.FindClass)(env, NATIVE_CLASS.as_ptr().cast()) };
+        let raw_env = raw_env.cast::<JNIEnv>();
+        let Some(env) = (unsafe { raw_env.as_ref() }) else {
+            return JNI_ERR;
+        };
+        let Some(functions) = (unsafe { jni_functions(env) }) else {
+            return JNI_ERR;
+        };
+        let class = unsafe { (functions.FindClass)(raw_env, NATIVE_CLASS.as_ptr().cast()) };
         if class.is_null() {
             return JNI_ERR;
         }
@@ -268,7 +281,7 @@ pub unsafe extern "system" fn JNI_OnLoad(vm: *mut JavaVM, _reserved: *mut c_void
             ),
         ];
         if unsafe {
-            (functions.RegisterNatives)(env, class, methods.as_ptr(), methods.len() as jint)
+            (functions.RegisterNatives)(raw_env, class, methods.as_ptr(), methods.len() as jint)
         } != JNI_OK
         {
             return JNI_ERR;
@@ -373,6 +386,12 @@ mod tests {
             misaligned,
             std::mem::size_of::<OutcomeV1>() as u64,
         ));
+    }
+
+    #[test]
+    fn jni_function_table_rejects_a_null_inner_pointer() {
+        let null_table: JNIEnv = std::ptr::null();
+        assert!(unsafe { jni_functions(&null_table) }.is_none());
     }
 
     #[test]

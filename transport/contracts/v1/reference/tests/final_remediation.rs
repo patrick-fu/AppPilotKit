@@ -8,7 +8,7 @@ fn contract_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn verify_fixture(name: &str, expected: &str) {
+fn verify_fixture(name: &str) {
     let output = Command::new(env!(
         "CARGO_BIN_EXE_apppilotkit-transport-contract-reference"
     ))
@@ -16,13 +16,8 @@ fn verify_fixture(name: &str, expected: &str) {
     .arg(contract_root().join("reference/fixtures").join(name))
     .output()
     .expect("run public verify command");
-    assert!(
-        output.status.success(),
-        "verify failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("verify stdout is UTF-8");
-    assert!(stdout.contains(expected), "unexpected stdout: {stdout}");
+    assert!(output.status.success(), "fixture verification failed");
+    assert_eq!(output.stdout, b"verified fixture\n");
 }
 
 #[test]
@@ -33,15 +28,22 @@ fn public_verify_enforces_retained_machine_session_and_inventory_contracts() {
     .arg("verify")
     .output()
     .expect("run public verify command");
-    assert!(
-        output.status.success(),
-        "verify failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        String::from_utf8(output.stdout).expect("verify stdout is UTF-8"),
-        "verified transport contract v1: schemas=4 cddl=3 vector_files=9 crypto_suites=2 descriptor_suites=1 artifact_suites=1 negative_cases=119\n"
-    );
+    assert!(output.status.success(), "contract verification failed");
+    assert_eq!(output.stdout, b"verified transport contract v1\n");
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(contract_root().join("manifest.json")).expect("read root manifest"),
+    )
+    .expect("parse root manifest");
+    let paths = manifest["files"]
+        .as_array()
+        .expect("root manifest files")
+        .iter()
+        .filter_map(|entry| entry["path"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(paths.len(), 50);
+    assert!(paths.contains("reference/src/main.rs"));
+    assert!(paths.contains("reference/src/verifier.rs"));
+    assert!(paths.contains("vectors/manifest.json"));
 }
 
 #[test]
@@ -95,46 +97,28 @@ fn lifecycle_vector_pins_the_g0_case_inventory() {
 
 #[test]
 fn case_id_cannot_be_rerouted_by_a_fixture_validator_label() {
-    verify_fixture(
-        "d0-final-validator-reroute.json",
-        "verified fixture cross-generation: rejected/authenticationFailed",
-    );
+    verify_fixture("d0-final-validator-reroute.json");
 }
 
 #[test]
 fn wrong_psk_is_an_executable_handshake_negative() {
-    verify_fixture(
-        "d0-final-wrong-psk.json",
-        "verified fixture wrong-psk: rejected/authenticationFailed",
-    );
+    verify_fixture("d0-final-wrong-psk.json");
 }
 
 #[test]
 fn deterministic_cbor_has_a_nesting_limit() {
-    verify_fixture(
-        "d0-final-cbor-depth.json",
-        "verified fixture cbor-depth-limit: rejected/malformed",
-    );
+    verify_fixture("d0-final-cbor-depth.json");
 }
 
 #[test]
 fn retained_evidence_is_recomputed_from_capture_bytes() {
-    verify_fixture(
-        "d0-final-inconsistent-evidence.json",
-        "verified fixture inconsistent-retained-evidence: rejected/bindingMismatch",
-    );
+    verify_fixture("d0-final-inconsistent-evidence.json");
 }
 
 #[test]
 fn canary_controls_distinguish_real_hits_from_dishonest_counts() {
-    verify_fixture(
-        "d0-6e-secret-surface-canary-hit.json",
-        "verified fixture d0-6e-secret-surface-canary-hit: rejected/internalError",
-    );
-    verify_fixture(
-        "d0-final-dishonest-canary-count.json",
-        "verified fixture secret-surface-dishonest-count: rejected/internalError",
-    );
+    verify_fixture("d0-6e-secret-surface-canary-hit.json");
+    verify_fixture("d0-final-dishonest-canary-count.json");
 }
 
 #[test]

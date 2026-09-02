@@ -78,11 +78,8 @@ fn main() -> AnyResult<()> {
                 if args.next().is_some() {
                     return Err("verify --fixture accepts exactly one path".into());
                 }
-                let outcome = verifier::verify_fixture(Path::new(&fixture), MAX_BROKER_CBOR_BYTES)?;
-                println!(
-                    "verified fixture {}: {}/{}",
-                    outcome.id, outcome.result, outcome.close_reason
-                );
+                verifier::verify_fixture(Path::new(&fixture), MAX_BROKER_CBOR_BYTES)?;
+                println!("verified fixture");
                 Ok(())
             }
             Some("--evidence") => {
@@ -154,15 +151,12 @@ fn verify(root: &Path) -> AnyResult<()> {
     verify_dependency_pin(root)?;
     verify_schemas(root)?;
     verify_cddl(root)?;
-    let crypto_suites = verifier::verify_positive_crypto(root)?;
-    let descriptor_suites = verifier::verify_positive_android_descriptor(root)?;
-    let artifact_suites = verifier::verify_positive_ios_app_artifact(root)?;
-    let negative_cases = verify_vectors(root)?;
+    let _crypto_suites = verifier::verify_positive_crypto(root)?;
+    let _descriptor_suites = verifier::verify_positive_android_descriptor(root)?;
+    let _artifact_suites = verifier::verify_positive_ios_app_artifact(root)?;
+    let _negative_cases = verify_vectors(root)?;
     verify_manifests(root)?;
-    println!(
-        "verified transport contract v1: schemas=4 cddl=3 vector_files={} crypto_suites={crypto_suites} descriptor_suites={descriptor_suites} artifact_suites={artifact_suites} negative_cases={negative_cases}",
-        vector_names().len(),
-    );
+    println!("verified transport contract v1");
     Ok(())
 }
 

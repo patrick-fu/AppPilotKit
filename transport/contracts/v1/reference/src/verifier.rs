@@ -445,12 +445,6 @@ struct VerifiedSessionCiphertexts {
     response_outer: Vec<u8>,
 }
 
-pub struct FixtureOutcome {
-    pub id: String,
-    pub result: &'static str,
-    pub close_reason: &'static str,
-}
-
 pub fn parse_strict_json(input: &[u8]) -> Result<Value, serde_json::Error> {
     let mut deserializer = serde_json::Deserializer::from_slice(input);
     let value = StrictValueSeed.deserialize(&mut deserializer)?;
@@ -1511,7 +1505,7 @@ fn verify_session_response_binding(vector: &Value) -> AnyResult<()> {
     Ok(())
 }
 
-pub fn verify_fixture(path: &Path, max_broker_cbor_bytes: u64) -> AnyResult<FixtureOutcome> {
+pub fn verify_fixture(path: &Path, max_broker_cbor_bytes: u64) -> AnyResult<()> {
     let fixture: Value = serde_json::from_slice(&fs::read(path)?)?;
     verify_document(path, &fixture, max_broker_cbor_bytes)
 }
@@ -1520,7 +1514,7 @@ pub fn verify_vector_case(
     contract_root: &Path,
     case: &Value,
     max_broker_cbor_bytes: u64,
-) -> AnyResult<FixtureOutcome> {
+) -> AnyResult<()> {
     let document = serde_json::json!({
         "id": case["id"],
         "validator": case["validator"],
@@ -1538,11 +1532,7 @@ pub fn verify_vector_case(
     )
 }
 
-fn verify_document(
-    path: &Path,
-    fixture: &Value,
-    max_broker_cbor_bytes: u64,
-) -> AnyResult<FixtureOutcome> {
+fn verify_document(path: &Path, fixture: &Value, max_broker_cbor_bytes: u64) -> AnyResult<()> {
     let id = fixture["id"]
         .as_str()
         .ok_or("fixture id missing")?
@@ -1599,11 +1589,7 @@ fn verify_document(
         )
         .into());
     }
-    Ok(FixtureOutcome {
-        id,
-        result,
-        close_reason,
-    })
+    Ok(())
 }
 
 fn frame_error_kind(id: &str, close_reason: &str) -> Option<&'static str> {

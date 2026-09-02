@@ -137,14 +137,14 @@
       "sha256": "688c91c32604064acdb916e18617cbdee52b85106d109e32ab95a84e7bc6ec14"
     },
     {
-      "bytes": 120660,
+      "bytes": 120319,
       "path": "reference/src/main.rs",
-      "sha256": "bed1fbfd2c67928ee895872b203390b1fd314ee9098ceaed83fdb5c91968ee59"
+      "sha256": "1cca99294f2ea60ea411d99124ceb69d833c8880737666c7752085dd3778108d"
     },
     {
-      "bytes": 169875,
+      "bytes": 169637,
       "path": "reference/src/verifier.rs",
-      "sha256": "3b8f727b602262186690db1f70252a0339893e5cd516c7574739d5a5bdd21767"
+      "sha256": "ce6cb41902213c2afc62cb0c3c3c83a8663c51aad25726f99c2750358a8704ca"
     },
     {
       "bytes": 23204,
@@ -152,9 +152,9 @@
       "sha256": "d022fd521d72c87d3aef4c2d0b65836fd9cdf0d7612e50232b6ea38294a5022a"
     },
     {
-      "bytes": 8103,
+      "bytes": 7726,
       "path": "reference/tests/final_remediation.rs",
-      "sha256": "edf0680c9ed3ddcc1578681f36cc36a4cfe6aad35c2fefdbb31b46ccdbef112e"
+      "sha256": "3818aef0a3f8425cc640fe3b6847c3e4ced18b7d23168aac26033948335230d9"
     },
     {
       "bytes": 17598,
@@ -162,9 +162,9 @@
       "sha256": "7cdd2e2a845eaa06626a3931f35a754289c4ea0679e1fc0618a01ebee690cf39"
     },
     {
-      "bytes": 4704,
+      "bytes": 2840,
       "path": "reference/tests/remediation.rs",
-      "sha256": "5e89663d5f28bf803d3521e3085adcf505b3a3d8e7972d84984197528d1527a5"
+      "sha256": "ec1cb7ee2008dbd1e83cbb217ffb1a022e8b8a69ff22cc6a2ca5fa9c7b101425"
     },
     {
       "bytes": 12454,

@@ -2296,47 +2296,43 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     struct LiteralFields {
-        context: String,
         fields: BTreeMap<String, Value>,
     }
 
     impl LiteralFields {
-        fn new(context: impl Into<String>, value: Value) -> Self {
-            let context = context.into();
+        fn new(value: Value) -> Self {
             let fields = value
                 .as_object()
-                .unwrap_or_else(|| panic!("{context} must be an object"))
+                .unwrap_or_else(|| panic!("test vector must be an object"))
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect();
-            Self { context, fields }
+            Self { fields }
         }
 
         fn take(&mut self, key: &str) -> Value {
             self.fields
                 .remove(key)
-                .unwrap_or_else(|| panic!("{} missing field {key}", self.context))
+                .unwrap_or_else(|| panic!("test vector missing required field"))
         }
 
         fn string(&mut self, key: &str) -> String {
             self.take(key)
                 .as_str()
-                .unwrap_or_else(|| panic!("{} field {key} must be a string", self.context))
+                .unwrap_or_else(|| panic!("test vector field must be a string"))
                 .to_owned()
         }
 
         fn u64(&mut self, key: &str) -> u64 {
             self.take(key)
                 .as_u64()
-                .unwrap_or_else(|| panic!("{} field {key} must be a u64", self.context))
+                .unwrap_or_else(|| panic!("test vector field must be a u64"))
         }
 
         fn finish(self) {
             assert!(
                 self.fields.is_empty(),
-                "{} has unknown or unconsumed fields: {:?}",
-                self.context,
-                self.fields.keys().collect::<Vec<_>>()
+                "test vector has unknown or unconsumed fields"
             );
         }
     }
@@ -2354,8 +2350,8 @@ mod tests {
         );
     }
 
-    fn assert_case_envelope(value: Value, source: &str) -> (String, Value) {
-        let mut case = LiteralFields::new(source, value);
+    fn assert_case_envelope(value: Value) -> (String, Value) {
+        let mut case = LiteralFields::new(value);
         let id = case.string("id");
         let input = case.take("canonical_input");
         assert_eq!(case.string("classification"), "TEST-ONLY");
@@ -2438,17 +2434,15 @@ mod tests {
             ),
         ];
         let mut seen = BTreeSet::new();
-        for (name, document) in documents {
-            let mut root = LiteralFields::new(name, document);
+        for (_, document) in documents {
+            let mut root = LiteralFields::new(document);
             assert_eq!(root.string("schema_version"), "1.0");
             assert!(!root.string("suite").is_empty());
             assert!(!root.string("oracle").is_empty());
-            let mut material =
-                LiteralFields::new("test_only_material", root.take("test_only_material"));
+            let mut material = LiteralFields::new(root.take("test_only_material"));
             assert_eq!(material.string("classification"), "TEST-ONLY");
             assert_eq!(material.string("production_use"), "forbidden");
-            let mut secrets =
-                LiteralFields::new("test_only_material.material", material.take("material"));
+            let mut secrets = LiteralFields::new(material.take("material"));
             assert_eq!(
                 secrets.string("process_bootstrap_secret_hex"),
                 "41".repeat(32)
@@ -2462,9 +2456,9 @@ mod tests {
                 .iter()
                 .cloned()
             {
-                let (id, input) = assert_case_envelope(value, name);
+                let (id, input) = assert_case_envelope(value);
                 assert!(seen.insert(id.clone()), "duplicate vector id {id}");
-                let mut input = LiteralFields::new(format!("{name}:{id}:canonical_input"), input);
+                let mut input = LiteralFields::new(input);
                 let expected_fields: &[&str] = match id.as_str() {
                     "outer-header-timeout" | "outer-body-timeout" | "outer-zero-length" => {
                         &["elapsed_ms", "raw_outer_hex"]
@@ -2614,15 +2608,14 @@ mod tests {
         )))
         .expect("bootstrap vector");
         let binding = bootstrap_binding_from_vector(&bootstrap);
-        let mut root = LiteralFields::new("bootstrap", bootstrap);
+        let mut root = LiteralFields::new(bootstrap);
         assert_eq!(root.string("schema_version"), "1.0");
         assert_eq!(root.string("suite"), "bootstrap-nk-success");
         assert_eq!(root.string("oracle"), "snow-0.10.0");
-        let mut material =
-            LiteralFields::new("bootstrap material", root.take("test_only_material"));
+        let mut material = LiteralFields::new(root.take("test_only_material"));
         assert_eq!(material.string("classification"), "TEST-ONLY");
         assert_eq!(material.string("production_use"), "forbidden");
-        let mut keys = LiteralFields::new("bootstrap keys", material.take("material"));
+        let mut keys = LiteralFields::new(material.take("material"));
         assert_eq!(keys.string("process_bootstrap_secret_hex"), "41".repeat(32));
         assert_eq!(keys.string("broker_static_private_hex"), "11".repeat(32));
         assert_eq!(keys.string("target_ephemeral_private_hex"), "21".repeat(32));
@@ -2631,7 +2624,7 @@ mod tests {
         assert_eq!(keys.string("broker_static_public_hex").len(), 64);
         keys.finish();
         material.finish();
-        let mut canonical = LiteralFields::new("bootstrap canonical", root.take("canonical_input"));
+        let mut canonical = LiteralFields::new(root.take("canonical_input"));
         assert_eq!(
             canonical.string("noise_name"),
             "Noise_NK_25519_ChaChaPoly_SHA256"
@@ -2665,7 +2658,7 @@ mod tests {
         assert!(!canonical.string("launch_descriptor_cbor_hex").is_empty());
         assert!(!canonical.string("ack_payload_cbor_hex").is_empty());
         canonical.finish();
-        let mut expected = LiteralFields::new("bootstrap expected", root.take("expected"));
+        let mut expected = LiteralFields::new(root.take("expected"));
         let frames = [
             expected.string("m1_outer_hex"),
             expected.string("m2_outer_hex"),
@@ -2696,20 +2689,20 @@ mod tests {
         )))
         .expect("session vector");
         let binding = session_binding_from_vector(&session);
-        let mut root = LiteralFields::new("session", session);
+        let mut root = LiteralFields::new(session);
         assert_eq!(root.string("schema_version"), "1.0");
         assert_eq!(root.string("suite"), "session-nnpsk0-success");
         assert_eq!(root.string("oracle"), "snow-0.10.0");
-        let mut material = LiteralFields::new("session material", root.take("test_only_material"));
+        let mut material = LiteralFields::new(root.take("test_only_material"));
         assert_eq!(material.string("classification"), "TEST-ONLY");
         assert_eq!(material.string("production_use"), "forbidden");
-        let mut keys = LiteralFields::new("session keys", material.take("material"));
+        let mut keys = LiteralFields::new(material.take("material"));
         assert_eq!(keys.string("process_bootstrap_secret_hex"), "41".repeat(32));
         assert_eq!(keys.string("target_ephemeral_private_hex"), "91".repeat(32));
         assert_eq!(keys.string("broker_ephemeral_private_hex"), "a1".repeat(32));
         keys.finish();
         material.finish();
-        let mut canonical = LiteralFields::new("session canonical", root.take("canonical_input"));
+        let mut canonical = LiteralFields::new(root.take("canonical_input"));
         assert_eq!(
             canonical.string("noise_name"),
             "Noise_NNpsk0_25519_ChaChaPoly_SHA256"
@@ -2729,7 +2722,7 @@ mod tests {
             assert!(!canonical.string(field).is_empty());
         }
         canonical.finish();
-        let mut expected = LiteralFields::new("session expected", root.take("expected"));
+        let mut expected = LiteralFields::new(root.take("expected"));
         let frame_names = [
             "m1_outer_hex",
             "m2_outer_hex",
@@ -4108,7 +4101,7 @@ mod tests {
         control["cryptographic_expected_bytes_hex"] = Value::String(mutated);
         assert!(
             std::panic::catch_unwind(|| {
-                assert_case_envelope(control, "equal-generation mutation");
+                assert_case_envelope(control);
             })
             .is_err(),
             "mutated cryptographic_expected_bytes_hex was not bound to raw input"
