@@ -1,0 +1,21 @@
+{
+  "id": "d0-2-impossible-catalog-list-evidence",
+  "validator": "catalog_list_evidence",
+  "input": {
+    "catalog": {
+      "id": "catalog_smoke_01234567",
+      "generation": 4503599627370123
+    },
+    "declaration": {
+      "id": "smoke.ready",
+      "kind": "resource",
+      "declaration_revision": 1
+    },
+    "output_schema_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "value": {
+      "ready": true
+    }
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "malformed"
+}

@@ -1,0 +1,84 @@
+{
+  "broker_target_ready": {
+    "expires_at_unix_ms": 1893456000000,
+    "issued_at_unix_ms": 1893455970000,
+    "listener_epoch": 1,
+    "prepare_projection": "byte_identical",
+    "process_generation": 4503599627370123,
+    "target_reference_token_hex": "6161616161616161616161616161616161616161616161616161616161616161"
+  },
+  "goldens": {
+    "global_cbor_cap": 67109120,
+    "global_packet_cap": 67109124,
+    "max_exchange_request_body_bytes": 16777216,
+    "max_exchange_request_cbor_bytes": 16777480,
+    "max_exchange_request_cbor_overhead_bytes": 264,
+    "max_exchange_request_packet_bytes": 16777484,
+    "max_exchange_response_body_bytes": 67108864,
+    "max_exchange_response_cbor_bytes": 67109120,
+    "max_exchange_response_cbor_overhead_bytes": 256,
+    "max_exchange_response_packet_bytes": 67109124,
+    "max_open_session_cbor_bytes": 73728,
+    "max_open_session_packet_bytes": 73732
+  },
+  "oracle": "independent_broker_packet_verifier",
+  "schema_version": "1.0",
+  "suite": "broker-ipc-boundaries",
+  "test_only_material": {
+    "classification": "TEST-ONLY",
+    "material": {},
+    "production_use": "forbidden"
+  },
+  "vectors": [
+    {
+      "canonical_input": {
+        "declared_cbor_length": 67109121
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226465636c617265645f63626f725f6c656e677468223a36373130393132317d",
+      "expected_transcript_sha256": "sha256:6c7f2d22bcc72e631dbc1de2bd6708da0f40864dc52a1d6613d517e4a854d62a",
+      "id": "broker-packet-cap-plus-one",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "broker_packet"
+    },
+    {
+      "canonical_input": {
+        "declared_cbor_length": 8193,
+        "operation": "prepare"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226465636c617265645f63626f725f6c656e677468223a383139332c226f7065726174696f6e223a2270726570617265227d",
+      "expected_transcript_sha256": "sha256:785d295dff53690496f8ec0e7e86f38bfe3387b8e25742b093c3ddee504f2b1a",
+      "id": "broker-control-operation-cap-plus-one",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "broker_packet"
+    },
+    {
+      "canonical_input": {
+        "declared_cbor_length": 73729,
+        "operation": "open_session"
+      },
+      "classification": "TEST-ONLY",
+      "cryptographic_expected_bytes_hex": null,
+      "expected_close_reason": "oversize",
+      "expected_result": "rejected",
+      "expected_transcript_encoding": "canonical_json_utf8",
+      "expected_transcript_hex": "7b226465636c617265645f63626f725f6c656e677468223a37333732392c226f7065726174696f6e223a226f70656e5f73657373696f6e227d",
+      "expected_transcript_sha256": "sha256:9e267220452015d1cde8c4e01fcc586e4e957b81f8f7ad58edd9bdf71f59fda9",
+      "id": "broker-open-session-cap-plus-one",
+      "oracle": "parser_lifecycle_contract",
+      "test_only_secret_hex": "4141414141414141414141414141414141414141414141414141414141414141",
+      "validator": "limit_lifecycle"
+    }
+  ]
+}

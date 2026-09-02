@@ -1,0 +1,22 @@
+{
+  "id": "d0-4b-broker-json-cbor-roundtrip",
+  "validator": "broker_diagnostic_roundtrip",
+  "input": {
+    "diagnostic": {
+      "schema_version": "1.0",
+      "request_id": "AAAAAAAAAAAAAAAAAAAAAA",
+      "status": "succeeded",
+      "result": {
+        "kind": "target_ready",
+        "target": "target_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "process_generation": 1,
+        "listener_epoch": 1,
+        "issued_at_unix_ms": 1000,
+        "expires_at_unix_ms": 31000
+      }
+    },
+    "raw_cbor_hex": "a4000101500000000000000000000000000000000002f503a60000015820000000000000000000000000000000000000000000000000000000000000000003010401051903e806197918"
+  },
+  "expected_result": "accepted",
+  "expected_close_reason": "none"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "d0-4c-error-message-byte-cap",
+  "validator": "json_semantics",
+  "input": {
+    "message": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "oversize"
+}

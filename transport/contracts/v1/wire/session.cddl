@@ -1,0 +1,86 @@
+; Per-session Noise_NNpsk0_25519_ChaChaPoly_SHA256, Noise revision 34.
+; Target is initiator, Broker is responder, and PBS is psk0.
+; A fresh connection and fresh ephemeral keys are required per Protocol Session.
+
+session-prologue = [
+  "apppilotkit.transport",
+  1,
+  "session",
+  0,                            ; initiator role Target
+  1,                            ; responder role Broker
+  lease-id,
+  process-generation,
+  listener-epoch,
+  16777216,                     ; absolute request cap
+  67108864,                     ; absolute response cap
+  8192,                         ; handshake plaintext payload cap
+  nk-handshake-hash
+]
+
+; Both handshake payloads are empty bstr. Each handshake ciphertext has the
+; common u16be outer length. After split the record format below begins.
+
+record-header = bstr .size 12
+; The bstr content is not CBOR. Its exact bytes are kind:u8 || flags:u8 ||
+; reserved:u16be || total_len:u32be || offset:u32be. The containing Noise
+; plaintext is the 12 content bytes followed immediately by record data; the
+; bstr major-type/length prefix is not transmitted.
+
+record-kind = 1 / 2 / 3 / 4
+; 1 application, 2 finished, 3 heartbeat, 4 close
+
+record-flags = 0 / 1 / 2 / 3
+; START=1, END=2. Unknown bits are sequenceViolation.
+
+finished = {
+  0: 1,
+  1: role,
+  2: lease-id,
+  3: process-generation,
+  4: listener-epoch,
+  5: bstr .size 32              ; NNpsk0 handshake hash
+}
+
+first-opaque-application = bstr .size (1..65536)
+; Broker-to-Target opaque application bytes. Transport enforces only this cap
+; and hands the complete plaintext to the per-connection Protocol Runtime. The
+; runtime alone decodes UTF-8/JSON-RPC and requires session.open first.
+
+close = {
+  0: 1,
+  1: close-reason,
+  2: handoff-state
+}
+
+close-reason = 0 / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 / 13
+; normal, authenticationFailed, bindingMismatch, stale, timeout, oversize,
+; malformed, sequenceViolation, recordLimit, peerClosed, brokerLost,
+; eligibilityLost, cleanupFailed, internalError
+
+handoff-state = 0 / 1
+; not_handed_off, handoff_possible_or_confirmed
+role = 0 / 1                   ; Target / Broker
+lease-id = bstr .size 16
+nk-handshake-hash = bstr .size 32
+process-generation = 1..9007199254740991
+listener-epoch = 1..9007199254740991
+
+; Record rules:
+; - A plaintext record is exactly 12-byte header plus data.
+; - reserved is zero. A nonzero reserved field or non-START total_len is a
+;   sequenceViolation. Truncated header/body and trailing bytes are malformed.
+;   Authenticated malformed and sequenceViolation failures map to the existing
+;   public sessionExpired error (exit 4); transport never fabricates
+;   application-layer JSON-RPC parseError or invalidRequest.
+; - START has offset zero and total_len equal to the complete message length.
+; - data length is 0..65507, so ciphertext including 16-byte AEAD tag is at
+;   most 65535. A non-empty application message uses one or more records.
+; - Half-duplex: one side owns the application-message turn until END. One
+;   reassembly exists. Interleave, gap, overlap, reorder, trailing bytes after
+;   END, unexpected EOF, duplicate sequence, or a peer application record
+;   during the opposite turn is sequenceViolation or malformed as enumerated
+;   by the golden vectors.
+; - Request total_len <=16777216; response total_len <=67108864;
+;   session.open total_len <=65536.
+; - Each direction accepts fewer than 2^32 transport records and fewer than
+;   2^40 plaintext bytes. There is no rekey. Hitting either cap terminates.

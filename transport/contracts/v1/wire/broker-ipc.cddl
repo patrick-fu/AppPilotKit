@@ -1,0 +1,186 @@
+; AppPilotKit private Broker IPC v1.
+; RFC 8949 deterministic CBOR. Unsigned integer map keys are emitted ascending.
+; Packet = u32be(CBOR byte length) followed by exactly one broker-request/result.
+; CBOR length is 1..67109120; total packet bytes including the u32 prefix are
+; at most 67109124. Exchange request and success maxima are 16777480 and
+; 67109120 CBOR bytes. Open-session request/success packets are at most 73728
+; encoded CBOR bytes. All other non-exchange packets are at most 8192 encoded
+; CBOR bytes. Trailing bytes, duplicate keys, tags, floats,
+; indefinite items, non-shortest encodings, and out-of-order keys are malformed.
+
+broker-packet = broker-request / broker-result
+
+broker-request = prepare-request / open-session-request / exchange-request /
+                 close-session-request / close-lease-request
+
+prepare-request = {
+  0: 1,                         ; private contract version
+  1: request-id,                ; 16 bytes
+  2: uint,                      ; absolute deadline Unix ms
+  3: 0,
+  4: prepare-body
+}
+
+open-session-request = {
+  0: 1, 1: request-id, 2: uint, 3: 1, 4: open-session-body
+}
+
+exchange-request = {
+  0: 1, 1: request-id, 2: uint, 3: 2, 4: exchange-body
+}
+
+close-session-request = {
+  0: 1, 1: request-id, 2: uint, 3: 3, 4: close-session-body
+}
+
+close-lease-request = {
+  0: 1, 1: request-id, 2: uint, 3: 4, 4: close-lease-body
+}
+
+prepare-body = {
+  0: platform,
+  1: tstr .size (1..256),       ; exact device selector, non-secret
+  2: tstr .size (3..255),       ; app id
+  3: tstr .size (2..4096),      ; absolute app artifact path
+  4: digest,                    ; SHA-256 of exact artifact-encoding bytes
+  5: artifact-encoding
+}
+
+platform = 0 / 1                ; 0 iOS Simulator, 1 Android Emulator
+artifact-encoding = 0 / 1       ; 0 ios-app-tree-v1, 1 raw-file-v1
+; platform 0 requires encoding 0; platform 1 requires encoding 1.
+
+open-session-body = {
+  0: target-reference-token,
+  ? 1: session-id,              ; only a Target-issued id for explicit reuse
+  2: [1*32 tstr .size (3..128)], ; required capabilities, sorted UTF-8 ascending
+  ? 3: session-open-request,
+  ? 4: digest
+}
+; Target-only redemption requires keys 3 and 4. The trusted CLI adapter creates
+; the exact Protocol session.open bytes and digest; Broker transports them as
+; opaque application bytes. Explicit reuse supplies key 1 and omits 3 and 4.
+
+exchange-body = {
+  0: target-reference-token,
+  1: session-id,
+  2: process-generation,
+  3: listener-epoch,
+  4: bstr .size (1..16777216),  ; one complete Protocol request
+  5: digest,
+  6: side-effect
+}
+
+side-effect = 0 / 1 / 2 / 3
+; 0 read_only, 1 local_write, 2 app_mutation, 3 device_mutation
+
+close-session-body = {
+  0: target-reference-token,
+  1: session-id,
+  2: process-generation,
+  3: listener-epoch,
+  4: close-reason
+}
+
+close-lease-body = {
+  0: target-reference-token,
+  1: close-reason
+}
+
+broker-result = broker-success / broker-failure
+
+broker-success = {
+  0: 1,
+  1: request-id,
+  2: true,
+  3: success-body
+}
+
+success-body = target-ready-result / session-opened-result /
+               exchange-complete-result / closed-result
+
+target-ready-result = {
+  0: 0,
+  1: target-reference-token,
+  3: process-generation,
+  4: listener-epoch,
+  5: issued-at-unix-ms,
+  6: expires-at-unix-ms
+}
+
+session-opened-result = {
+  0: 1,
+  1: target-reference-token,
+  2: session-open-response,
+  3: digest,
+  4: process-generation,
+  5: listener-epoch,
+  6: handoff-state
+}
+; Broker does not parse session-open-response. The CLI adapter verifies its
+; digest, JSON-RPC envelope, Target-issued session id, generation, negotiated
+; version/capabilities/limits, then constructs OpenedProtocolSession. Broker
+; binds the returned opaque session id on the first exact match-only exchange.
+
+exchange-complete-result = {
+  0: 2,
+  1: target-reference-token,
+  2: session-id,
+  3: process-generation,
+  4: listener-epoch,
+  5: bstr .size (1..67108864),
+  6: digest,
+  7: handoff-state
+}
+
+closed-result = {
+  0: 3,
+  1: target-reference-token,
+  ? 2: session-id,
+  7: handoff-state
+}
+
+broker-failure = {
+  0: 1,
+  1: request-id,
+  2: false,
+  3: safe-error
+}
+
+safe-error = {
+  0: error-kind,
+  1: tstr .size (1..256),       ; redacted stock message; no CR/LF/NUL
+  2: bool,
+  3: error-stage,
+  4: handoff-state,
+  5: close-reason
+}
+
+error-kind = 0 / 1 / 2 / 3 / 4
+; target.selectionRequired, sessionExpired, transport.authenticationRequired,
+; timeout, internalError. Broker never emits selector
+; session.selectionRequired or public action.outcomeUnknown.
+
+error-stage = 0 / 1 / 2 / 3 / 4 / 5 / 6 / 7
+; ipc, prepare, bootstrap, session_handshake, session_open, exchange, close, cleanup
+
+handoff-state = 0 / 1
+; 0 not_handed_off, 1 handoff_possible_or_confirmed. Transport never reports
+; Mutation Dispatch and never directly emits public action.outcomeUnknown.
+
+close-reason = 0 / 1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 10 / 11 / 12 / 13
+; normal, authenticationFailed, bindingMismatch, stale, timeout, oversize,
+; malformed, sequenceViolation, recordLimit, peerClosed, brokerLost,
+; eligibilityLost, cleanupFailed, internalError
+
+request-id = bstr .size 16
+; JSON/argv target_ + canonical unpadded base64url is a bijection with this token.
+target-reference-token = bstr .size 32
+session-id = tstr .size (16..128)
+digest = bstr .size 32
+session-open-request = bstr .size (1..65536)
+session-open-response = bstr .size (1..65536)
+process-generation = 1..9007199254740991
+listener-epoch = 1..9007199254740991
+issued-at-unix-ms = 1..9007199254740991
+expires-at-unix-ms = 1..9007199254740991

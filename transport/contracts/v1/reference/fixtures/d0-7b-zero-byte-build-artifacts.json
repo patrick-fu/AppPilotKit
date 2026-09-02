@@ -1,0 +1,25 @@
+{
+  "id": "d0-7b-zero-byte-build-artifacts",
+  "validator": "evidence_completeness",
+  "input": {
+    "installed_names": ["apppilotkit", "apppilotkit-broker", "apppilotkit-target-prepare"],
+    "fixed_canary_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "execution_canary_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "surface_names": [
+      "argv", "environment", "activity_extras", "stdout", "stderr",
+      "product_logs", "diagnostics", "machine_result", "next_actions",
+      "artifacts", "smoke_host_build_artifact", "production_build_artifact",
+      "release_build_artifact"
+    ],
+    "build_artifact_byte_counts": {
+      "smoke_host_build_artifact": 0,
+      "production_build_artifact": 0,
+      "release_build_artifact": 0
+    },
+    "all_surfaces_have_scanner": true,
+    "all_surfaces_have_artifact_hash": true,
+    "complete": true
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "malformed"
+}

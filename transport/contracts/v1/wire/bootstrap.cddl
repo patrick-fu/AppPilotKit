@@ -1,0 +1,107 @@
+; Process bootstrap for Noise_NK_25519_ChaChaPoly_SHA256, Noise revision 34.
+; Target is initiator. Broker is responder with one-time static X25519 key.
+; All payloads are RFC 8949 deterministic CBOR.
+; The reference digest below anchors only the initial bootstrap descriptor.
+; After acknowledgement, one PBS may authorize multiple independent fresh
+; NNpsk0 sessions; later Ready References remain Broker-only locators.
+
+launch-descriptor = {
+  0: 1,
+  1: platform,
+  2: lease-id,
+  3: target-nonce,
+  4: app-artifact-digest,       ; SHA-256 of platform-fixed artifact bytes:
+                                ; iOS ios-app-tree-v1 / Android raw-file-v1
+  5: bstr .size 32,             ; one-time Broker static public key
+  6: endpoint,
+  7: uint,                      ; descriptor expiry Unix ms
+  8: target-reference-digest   ; SHA-256 of full UTF-8 target_ reference
+}
+
+platform = 0 / 1                ; iOS Simulator / Android Emulator
+endpoint = ios-endpoint / android-endpoint
+ios-endpoint = {
+  0: "127.0.0.1",
+  1: 49152..65535
+}
+android-endpoint = {
+  0: tstr .size (32..96)        ; random localabstract name
+}
+
+bootstrap-prologue = [
+  "apppilotkit.transport",
+  1,
+  "bootstrap",
+  0,                            ; initiator role Target
+  1,                            ; responder role Broker
+  target-reference-digest,
+  lease-id,
+  target-nonce,
+  app-artifact-digest,
+  uint                          ; descriptor expiry Unix ms
+]
+
+; NK message 1 payload. The outer u16be length is outside CBOR.
+bootstrap-m1-payload = {
+  0: 1,
+  1: target-reference-digest,
+  2: lease-id,
+  3: target-nonce
+}
+
+; NK message 2 encrypted payload. This is the only PBS delivery.
+bootstrap-m2-payload = {
+  0: 1,
+  1: process-bootstrap-secret,
+  2: target-reference-digest,
+  3: lease-id,
+  4: target-nonce,
+  5: uint,                      ; descriptor expiry Unix ms
+  6: app-artifact-digest
+}
+
+; First post-split encrypted Target-to-Broker record data.
+; Plaintext is the session.cddl 12-byte header with kind=2, flags=3,
+; reserved=0, total_len=CBOR length, offset=0, followed by bootstrap-ack.
+bootstrap-ack = {
+  0: 1,
+  1: target-reference-digest,
+  2: lease-id,
+  3: process-generation,
+  4: listener-epoch,             ; initial value 1
+  5: bstr .size 32              ; NK handshake hash
+}
+
+; Subsequent lease-control connection records use the same generation/epoch
+; binding and contain no Protocol application bytes. Plaintext uses the same
+; 12-byte header with kind=3, flags=3, reserved=0, total_len=CBOR length,
+; offset=0. Heartbeats occur only between complete records. Broker sends one
+; request every 30000 ms; Target replies with the exact same counter and active
+; binding. Four missing/invalid replies or 120000 ms is terminal brokerLost.
+lease-heartbeat = lease-heartbeat-request / lease-heartbeat-reply
+lease-heartbeat-request = {
+  0: 1,
+  1: lease-id,
+  2: process-generation,
+  3: listener-epoch,
+  4: uint .gt 0                 ; monotonically increasing heartbeat counter
+}
+lease-heartbeat-reply = {
+  0: 2,
+  1: lease-id,
+  2: process-generation,
+  3: listener-epoch,
+  4: uint .gt 0                 ; exact request counter
+}
+
+target-reference-digest = bstr .size 32
+lease-id = bstr .size 16
+target-nonce = bstr .size 32
+app-artifact-digest = bstr .size 32
+; ios-app-tree-v1 is magic "APPPILOTKIT-IOS-APP-TREE\0\x01", u32be entry
+; count, then strict raw-UTF-8-byte-sorted records. A record is kind:u8,
+; path_len:u32be, path:utf8, executable_class:u8, and for a file only,
+; file_len:u64be plus exact file bytes. The bundle root is implicit.
+process-bootstrap-secret = bstr .size 32
+process-generation = 1..9007199254740991
+listener-epoch = 1..9007199254740991

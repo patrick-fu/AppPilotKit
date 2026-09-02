@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-30",
+  "noise": {
+    "revision": 34,
+    "date": "2018-07-11",
+    "source": "https://raw.githubusercontent.com/noiseprotocol/noise_spec/ecdf084ece2bf92b16b1201b6ae5c99d23fb4151/noise.md",
+    "git_commit": "ecdf084ece2bf92b16b1201b6ae5c99d23fb4151",
+    "content_bytes": 136496,
+    "sha256": "44f249557aa2a21f819ba3dde54a677476d585660036e4a52f83a8a781eddcf6",
+    "status": "official/unstable; the revision states that instability is limited to deferred patterns, which are not used here"
+  },
+  "snow": {
+    "version": "0.10.0",
+    "crate_sha256": "599b506ccc4aff8cf7844bc42cf783009a434c1e26c964432560fb6d6ad02d82",
+    "requested_features": [
+      "default-resolver",
+      "use-chacha20poly1305",
+      "use-curve25519",
+      "use-getrandom",
+      "use-sha2"
+    ],
+    "resolved_features": [
+      "chacha20poly1305",
+      "curve25519-dalek",
+      "default-resolver",
+      "getrandom",
+      "sha2",
+      "use-chacha20poly1305",
+      "use-curve25519",
+      "use-getrandom",
+      "use-sha2"
+    ],
+    "default_features": false,
+    "rust_version": "1.85",
+    "license": "Apache-2.0 OR MIT",
+    "license_decision": "accepted for the publish-disabled internal/reference use; both alternatives are repository-compatible permissive licenses and no copyleft or source-publication obligation is introduced",
+    "advisory_review": {
+      "database": "https://rustsec.org/packages/snow.html",
+      "reviewed_at": "2026-08-30",
+      "decision": "RUSTSEC-2024-0011 affects snow before 0.9.5 and is patched in 0.10.0; no listed RustSec advisory blocks 0.10.0"
+    }
+  },
+  "frozen_cli_schemas": [
+    {
+      "path": "artifact.schema.json",
+      "sha256": "f9675a39df934942dbc384670c16ee3da73aae6d96c0ae5ae96f4d24bd1c6161"
+    },
+    {
+      "path": "catalog.schema.json",
+      "sha256": "079c262a782f9d3ba476a4fd9357d1639c2e97dce2da834dfb6d2148eb0e87bc"
+    },
+    {
+      "path": "disclosure.schema.json",
+      "sha256": "3be7abf5b7e870ba33c93742abcd5b517c0ecc454c8efb56c64a8393f0061b2c"
+    },
+    {
+      "path": "error.schema.json",
+      "sha256": "1bd3d7e05d65276d558dd56fe6d80fd5cec1eada6e6e2c4c1566eb13ddf74c95"
+    },
+    {
+      "path": "machine-result.schema.json",
+      "sha256": "1bda6f4eb8f131f1e77afd7ebac51c9fcd2629429c3a9bd05bb99a1b619c7d45"
+    },
+    {
+      "path": "next-action.schema.json",
+      "sha256": "0a79e560c563270a55281dedec5180699b6186e25d8416febcdc277f8a24e88d"
+    }
+  ],
+  "toolchain": {
+    "minimum_rust": "1.85.0",
+    "verified_rust": "1.94.0",
+    "cargo_lock_version": 4
+  }
+}

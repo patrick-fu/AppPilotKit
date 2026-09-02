@@ -1,0 +1,13 @@
+{
+  "id": "d0-6c-record-gap",
+  "validator": "record_reassembly",
+  "input": {
+    "records_hex": [
+      "0101000000000004000000000102",
+      "01020000000000000000000304"
+    ],
+    "max_message_bytes": 16777216
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "sequenceViolation"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "d0-5-cross-binding-handshake-aead",
+  "validator": "noise_nk_cross_target",
+  "input": {
+    "binding_vector": "vectors/binding-replay-failures.json",
+    "case_id": "cross-target"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "authenticationFailed"
+}

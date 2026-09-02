@@ -1,0 +1,9 @@
+{
+  "id": "d0-6a-cbor-duplicate-key",
+  "validator": "deterministic_cbor",
+  "input": {
+    "raw_hex": "a200010002"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "malformed"
+}

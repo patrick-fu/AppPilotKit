@@ -1,0 +1,10 @@
+{
+  "id": "wrong-psk",
+  "validator": "noise_wrong_psk",
+  "input": {
+    "session_vector": "vectors/session-nnpsk0-success.json",
+    "wrong_psk_hex": "4242424242424242424242424242424242424242424242424242424242424242"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "authenticationFailed"
+}

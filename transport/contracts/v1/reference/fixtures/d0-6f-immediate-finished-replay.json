@@ -1,0 +1,11 @@
+{
+  "id": "d0-6f-immediate-finished-replay",
+  "validator": "noise_finished_replay",
+  "input": {
+    "session_vector": "vectors/session-nnpsk0-success.json",
+    "repeat_count": 2,
+    "replay_timing": "immediate_at_expected_nonce"
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "authenticationFailed"
+}

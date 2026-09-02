@@ -1,0 +1,13 @@
+{
+  "id": "d0-3-client-rewritten-ready-timestamps",
+  "validator": "ready_timestamps",
+  "input": {
+    "broker_issued_at_unix_ms": 1893456000000,
+    "broker_expires_at_unix_ms": 1893456030000,
+    "projected_issued_at_unix_ms": 1893456000001,
+    "projected_expires_at_unix_ms": 1893456030001,
+    "now_unix_ms": 1893456000001
+  },
+  "expected_result": "rejected",
+  "expected_close_reason": "bindingMismatch"
+}

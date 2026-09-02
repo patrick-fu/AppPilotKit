@@ -1,0 +1,14 @@
+APPPILOTKIT_TP_1.0 {
+  global:
+    apppilotkit_tp_v1_abi_version;
+    apppilotkit_tp_v1_create;
+    apppilotkit_tp_v1_drive;
+    apppilotkit_tp_v1_close;
+    apppilotkit_tp_v1_drop;
+    apppilotkit_tp_v1_output_count;
+    apppilotkit_tp_v1_output_len;
+    apppilotkit_tp_v1_output_copy;
+    apppilotkit_tp_v1_output_drop;
+    JNI_OnLoad;
+  local: *;
+};

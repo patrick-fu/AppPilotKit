@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://apppilotkit.dev/transport/contracts/v1/schema/target-ready.schema.json",
+  "title": "Ready Target Reference envelope",
+  "$comment": "Cross-field invariant enforced by the reference/lifecycle validator: expires_at_unix_ms equals issued_at_unix_ms + 30000 without overflow. A child reference follows Minted -> Redeeming -> Consumed | Expired. Target-only redemption is once while now < expires_at_unix_ms; match-only use is restricted to its already-bound Target-issued session.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "target", "issued_at_unix_ms", "expires_at_unix_ms"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "target": { "$ref": "#/$defs/target_reference" },
+    "issued_at_unix_ms": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "expires_at_unix_ms": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 }
+  },
+  "$defs": {
+    "target_reference": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 50,
+      "pattern": "^target_[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
+      "description": "ASCII target_ plus canonical unpadded base64url of exactly 32 bytes; decode then re-encode must be byte-identical."
+    }
+  }
+}
