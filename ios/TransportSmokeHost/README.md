@@ -14,8 +14,23 @@ what is built or shipped. There is no Release target:
 `Scripts/verify-release-exclusion.sh` builds the production package and proves
 that a Release Smoke Host compilation fails.
 
-Build the Debug simulator package with its accepted Rust FFI dependency:
+Build a Debug/Internal-only universal Simulator `.app` with its accepted Rust FFI dependency:
 
 ```text
-Scripts/run-with-rust-ffi.sh smoke-host-simulator
+Scripts/run-with-rust-ffi.sh package-smoke-host-simulator /absolute/path/TransportSmokeHost.app
 ```
+
+The output has bundle identifier `dev.apppilotkit.smoke`, package type `APPL`,
+and a universal arm64/x86_64 executable. It is a real Simulator app bundle, not
+a Swift executable probe. Install it on an exact Simulator UDID with:
+
+```text
+Scripts/run-with-rust-ffi.sh install-smoke-host-simulator <simulator-udid> /absolute/path/TransportSmokeHost.app
+```
+
+The package command rejects an existing output path and prints its canonical
+artifact path. The install command canonicalizes the existing path, then runs
+the same `ios-app-tree-v1` artifact scanner used by prepare before calling
+`simctl`. The installed `apppilotkit` prepare path must use the exact canonical
+path printed by the package command and app id with `artifact_encoding` set to
+`ios-app-tree-v1`.

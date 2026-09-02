@@ -64,6 +64,124 @@ swift_link_flags() {
   print -r -- "-Xlinker" "-L$library_dir"
 }
 
+build_universal_simulator_ffi() {
+  local arm64_dir
+  local x86_64_dir
+  local universal_dir="$work_root/universal-simulator-ffi"
+  arm64_dir=$(build_ffi aarch64-apple-ios-sim | tail -n 1)
+  x86_64_dir=$(build_ffi x86_64-apple-ios | tail -n 1)
+  mkdir "$universal_dir"
+  lipo -create \
+    "$arm64_dir/libapppilotkit_transport_ffi.a" \
+    "$x86_64_dir/libapppilotkit_transport_ffi.a" \
+    -output "$universal_dir/libapppilotkit_transport_ffi.a"
+  print -r -- "$universal_dir"
+}
+
+validate_with_prepare_artifact_scanner() {
+  local app_path=$1
+  local validator_dir="$work_root/prepare-artifact-validator"
+
+  mkdir -p "$validator_dir/src"
+  print -r -- "[package]
+name = \"apppilotkit-smoke-host-artifact-validator\"
+version = \"0.1.0\"
+edition = \"2024\"
+publish = false
+
+[dependencies]
+apppilotkit-apple-simulator-adapter = { path = \"$repo_dir/cli/crates/apple-simulator-adapter\" }
+apppilotkit-host-runtime = { path = \"$repo_dir/cli/crates/host-runtime\" }" >"$validator_dir/Cargo.toml"
+  print -r -- 'use apppilotkit_apple_simulator_adapter::inspect_ios_app_tree_digest;
+use apppilotkit_host_runtime::adapter::{AbsoluteDeadline, Cancellation};
+use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn main() {
+    let mut arguments = std::env::args_os();
+    let _ = arguments.next();
+    let app_path = arguments.next().expect("app path");
+    if arguments.next().is_some() {
+        std::process::exit(2);
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("unix time")
+        .as_millis() as u64;
+    let deadline = AbsoluteDeadline::new(now.saturating_add(30_000))
+        .unwrap_or_else(|_| std::process::exit(1));
+    inspect_ios_app_tree_digest(
+        Path::new(&app_path),
+        "dev.apppilotkit.smoke",
+        &Cancellation::new(),
+        deadline,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("prepare artifact scanner rejected app: {:?}", error.primary_kind());
+        std::process::exit(1);
+    });
+}' >"$validator_dir/src/main.rs"
+  "$cargo_root/bin/cargo" +1.94.0 run --quiet --manifest-path "$validator_dir/Cargo.toml" -- "$app_path"
+}
+
+validate_smoke_host_simulator_app() {
+  local app_path=$1
+  local canonical_app_path
+
+  [[ "$app_path" == /* && "$app_path" == *.app && -d "$app_path" ]] || {
+    print -u2 "app must be an absolute existing .app directory"
+    exit 2
+  }
+  canonical_app_path=$(realpath "$app_path")
+  validate_with_prepare_artifact_scanner "$canonical_app_path"
+}
+
+package_smoke_host_simulator() {
+  local output_app=$1
+  local output_parent=${output_app:h}
+  local output_name=${output_app:t}
+  local ffi_dir
+  local derived_data="$work_root/smoke-host-simulator-derived"
+  local executable="$derived_data/Build/Products/Debug-iphonesimulator/TransportSmokeHost"
+
+  [[ "$output_app" == /* && "$output_app" == *.app && ! -e "$output_app" && -d "$output_parent" ]] || {
+    print -u2 "output app must be an absolute, nonexistent .app path with an existing parent"
+    exit 2
+  }
+  output_parent=$(realpath "$output_parent")
+  output_app="$output_parent/$output_name"
+
+  ffi_dir=$(build_universal_simulator_ffi | tail -n 1)
+  (
+    cd "$package_dir"
+    xcodebuild build \
+      -scheme AppPilotKitTransportSmokeHost \
+      -configuration Debug \
+      -destination 'generic/platform=iOS Simulator' \
+      -derivedDataPath "$derived_data" \
+      OTHER_LDFLAGS="-L$ffi_dir" \
+      CODE_SIGNING_ALLOWED=NO
+  ) >&2
+
+  [[ -x "$executable" ]] || exit 3
+
+  mkdir "$output_app"
+  cp "$executable" "$output_app/TransportSmokeHost"
+  chmod 755 "$output_app/TransportSmokeHost"
+  print -r -- '<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>TransportSmokeHost</string>
+<key>CFBundleIdentifier</key><string>dev.apppilotkit.smoke</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+</dict></plist>' >"$output_app/Info.plist"
+
+  validate_smoke_host_simulator_app "$output_app"
+  lipo -archs "$output_app/TransportSmokeHost" | grep -Eq '(^| )arm64( |$).*x86_64|(^| )x86_64( |$).*arm64'
+  print -r -- "$output_app"
+}
+
 assert_release_rejected() {
   local subject=$1
   local expected_pattern=$2
@@ -170,6 +288,22 @@ case "$command" in
       --jobs 1 \
       -Xlinker "-L$library_dir"
     ;;
+  package-smoke-host-simulator)
+    [[ $# -eq 2 ]] || {
+      print -u2 "usage: $0 package-smoke-host-simulator /absolute/path/TransportSmokeHost.app"
+      exit 2
+    }
+    package_smoke_host_simulator "$2"
+    ;;
+  install-smoke-host-simulator)
+    [[ $# -eq 3 ]] || {
+      print -u2 "usage: $0 install-smoke-host-simulator <simulator-udid> /absolute/existing/TransportSmokeHost.app"
+      exit 2
+    }
+    canonical_app_path=$(realpath "$3")
+    validate_smoke_host_simulator_app "$canonical_app_path"
+    xcrun simctl install "$2" "$canonical_app_path"
+    ;;
   device-staticlib)
     library_dir=$(build_ffi aarch64-apple-ios | tail -n 1)
     build_test_broker aarch64-apple-ios
@@ -216,7 +350,7 @@ case "$command" in
     "$0" root-release-negative
     ;;
   *)
-    print -u2 "usage: $0 {test|release-negative|external-release-negative|simulator|smoke-host-simulator|device-staticlib|root-release-negative|all}"
+    print -u2 "usage: $0 {test|release-negative|external-release-negative|simulator|smoke-host-simulator|package-smoke-host-simulator|install-smoke-host-simulator|device-staticlib|root-release-negative|all}"
     exit 2
     ;;
 esac
