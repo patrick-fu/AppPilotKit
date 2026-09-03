@@ -42,6 +42,138 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(feature = "internal-diagnostics")]
+mod internal_diagnostics {
+    use super::{CloseReason, ControlFailure, File, Mutex, Value, Write};
+    use apppilotkit_host_runtime::ErrorStage;
+    use std::{
+        env,
+        os::fd::{FromRawFd, RawFd},
+        sync::OnceLock,
+    };
+
+    const PREPARE_FAILURE_FD: &str = "APPPILOTKIT_INTERNAL_PREPARE_FAILURE_FD";
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct PrepareFailureDiagnostic {
+        stage: &'static str,
+        close_reason: &'static str,
+        reason_code: &'static str,
+    }
+
+    impl PrepareFailureDiagnostic {
+        fn from_failure(failure: &ControlFailure) -> Self {
+            let stage = match failure.stage {
+                ErrorStage::Ipc => "ipc",
+                ErrorStage::Prepare => "prepare",
+                ErrorStage::Bootstrap => "bootstrap",
+                ErrorStage::SessionHandshake => "session_handshake",
+                ErrorStage::SessionOpen => "session_open",
+                ErrorStage::Exchange => "exchange",
+                ErrorStage::Close => "close",
+                ErrorStage::Cleanup => "cleanup",
+            };
+            let close_reason = match failure.close_reason {
+                CloseReason::Normal => "normal",
+                CloseReason::AuthenticationFailed => "authentication_failed",
+                CloseReason::BindingMismatch => "binding_mismatch",
+                CloseReason::Stale => "stale",
+                CloseReason::Timeout => "timeout",
+                CloseReason::Oversize => "oversize",
+                CloseReason::Malformed => "malformed",
+                CloseReason::SequenceViolation => "sequence_violation",
+                CloseReason::RecordLimit => "record_limit",
+                CloseReason::PeerClosed => "peer_closed",
+                CloseReason::BrokerLost => "broker_lost",
+                CloseReason::EligibilityLost => "eligibility_lost",
+                CloseReason::CleanupFailed => "cleanup_failed",
+                CloseReason::InternalError => "internal_error",
+            };
+            let reason_code = match (failure.stage, failure.close_reason) {
+                // The private control result does not preserve which Prepare
+                // branch produced BindingMismatch, so this code deliberately
+                // groups an in-progress Prepare with other prepare bindings.
+                (ErrorStage::Prepare, CloseReason::BindingMismatch) => "prepare_binding_mismatch",
+                (_, CloseReason::Stale | CloseReason::EligibilityLost) => "lease_stale",
+                (_, CloseReason::BrokerLost) => "broker_lost",
+                (_, CloseReason::BindingMismatch) => "binding_mismatch",
+                (_, CloseReason::PeerClosed) => "peer_closed",
+                (_, CloseReason::Malformed | CloseReason::SequenceViolation) => "malformed",
+                (_, CloseReason::Timeout) => "timeout",
+                (_, CloseReason::InternalError | CloseReason::CleanupFailed) => "internal",
+                _ => "other",
+            };
+            Self {
+                stage,
+                close_reason,
+                reason_code,
+            }
+        }
+
+        fn as_value(self) -> Value {
+            serde_json::json!({
+                "stage": self.stage,
+                "close_reason": self.close_reason,
+                "reason_code": self.reason_code,
+            })
+        }
+    }
+
+    fn sink() -> Option<&'static Mutex<File>> {
+        static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
+        SINK.get_or_init(|| {
+            let fd = env::var(PREPARE_FAILURE_FD)
+                .ok()
+                .and_then(|value| value.parse::<RawFd>().ok())
+                .filter(|fd| *fd > 2)?;
+            // Diagnostics may never delay the helper's public result.
+            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+            if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
+            {
+                return None;
+            }
+            // The Debug/Internal launcher owns this inherited descriptor.
+            Some(Mutex::new(unsafe { File::from_raw_fd(fd) }))
+        })
+        .as_ref()
+    }
+
+    pub(super) fn record_prepare_failure(failure: &ControlFailure) {
+        let Some(sink) = sink() else { return };
+        let Ok(mut sink) = sink.lock() else { return };
+        let _ = write_diagnostic(&mut *sink, PrepareFailureDiagnostic::from_failure(failure));
+    }
+
+    fn write_diagnostic(
+        writer: &mut dyn Write,
+        diagnostic: PrepareFailureDiagnostic,
+    ) -> std::io::Result<()> {
+        serde_json::to_writer(&mut *writer, &diagnostic.as_value())?;
+        writer.write_all(b"\n")
+    }
+
+    #[cfg(test)]
+    pub(super) fn diagnostic_value(failure: &ControlFailure) -> Value {
+        PrepareFailureDiagnostic::from_failure(failure).as_value()
+    }
+
+    #[cfg(test)]
+    pub(super) fn diagnostic_bytes(failure: &ControlFailure) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        write_diagnostic(&mut bytes, PrepareFailureDiagnostic::from_failure(failure))
+            .expect("diagnostic writes to memory");
+        bytes
+    }
+}
+
+#[cfg(feature = "internal-diagnostics")]
+fn record_prepare_failure(failure: &ControlFailure) {
+    internal_diagnostics::record_prepare_failure(failure);
+}
+
+#[cfg(not(feature = "internal-diagnostics"))]
+fn record_prepare_failure(_: &ControlFailure) {}
+
 const IPC_READ_CAP: usize = 67_109_124;
 const IPC_BUFFER: usize = 16 * 1024;
 const IPC_STARTUP_BUDGET: Duration = Duration::from_millis(1_000);
@@ -1007,6 +1139,9 @@ pub fn stage_install(prefix: &Path, built_bin_dir: &Path) -> io::Result<[PathBuf
 }
 
 pub fn render_prepare_error(error: &PrepareError) -> Value {
+    if let PrepareError::Broker(failure) = error {
+        record_prepare_failure(failure);
+    }
     let (kind, message, stage) = match error {
         PrepareError::InvalidInvocation => (
             "cli.invalidInvocation",
@@ -1038,6 +1173,7 @@ pub fn render_prepare_error(error: &PrepareError) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apppilotkit_host_runtime::ErrorStage;
     use apppilotkit_host_runtime::adapter::{
         AbsoluteDeadline, Cancellation, LaunchEndpoint, PendingLaunch, PlatformFailure,
         PlatformFailureKind, PlatformTargetAdapter, PublicLaunchDescriptor, TargetSelection,
@@ -1046,6 +1182,84 @@ mod tests {
         collections::VecDeque,
         os::unix::{fs::PermissionsExt, net::UnixStream},
     };
+
+    fn broker_failure(stage: ErrorStage, close_reason: CloseReason) -> ControlFailure {
+        ControlFailure {
+            kind: match close_reason {
+                CloseReason::Timeout => ErrorKind::Timeout,
+                CloseReason::InternalError | CloseReason::CleanupFailed => ErrorKind::InternalError,
+                _ => ErrorKind::SessionExpired,
+            },
+            message: "target-fixture session-fixture token-fixture /private/fixture next-action-fixture opaque-fixture",
+            retryable: false,
+            stage,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            close_reason,
+        }
+    }
+
+    #[test]
+    fn prepare_failure_rendering_keeps_the_public_contract() {
+        let failure = broker_failure(ErrorStage::Prepare, CloseReason::BindingMismatch);
+        assert_eq!(
+            render_prepare_error(&PrepareError::Broker(failure)),
+            serde_json::json!({
+                "schema_version": "1.0",
+                "status": "failed",
+                "error": {
+                    "kind": "sessionExpired",
+                    "message": "target-fixture session-fixture token-fixture /private/fixture next-action-fixture opaque-fixture",
+                    "retryable": false,
+                    "stage": "broker",
+                }
+            })
+        );
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn internal_prepare_failure_reason_codes_are_closed_and_redacted() {
+        let cases = [
+            (
+                ErrorStage::Prepare,
+                CloseReason::BindingMismatch,
+                "prepare_binding_mismatch",
+            ),
+            (
+                ErrorStage::Bootstrap,
+                CloseReason::BindingMismatch,
+                "binding_mismatch",
+            ),
+            (ErrorStage::Prepare, CloseReason::Stale, "lease_stale"),
+            (ErrorStage::Ipc, CloseReason::BrokerLost, "broker_lost"),
+            (
+                ErrorStage::Bootstrap,
+                CloseReason::PeerClosed,
+                "peer_closed",
+            ),
+            (ErrorStage::Prepare, CloseReason::Malformed, "malformed"),
+            (ErrorStage::Ipc, CloseReason::Timeout, "timeout"),
+            (ErrorStage::Cleanup, CloseReason::InternalError, "internal"),
+        ];
+        for (stage, close_reason, reason_code) in cases {
+            let failure = broker_failure(stage, close_reason);
+            let diagnostic = internal_diagnostics::diagnostic_value(&failure);
+            assert_eq!(diagnostic["reason_code"], reason_code);
+            assert_eq!(diagnostic.as_object().map(|value| value.len()), Some(3));
+            let output = String::from_utf8(internal_diagnostics::diagnostic_bytes(&failure))
+                .expect("diagnostic UTF-8");
+            for marker in [
+                "target-fixture",
+                "session-fixture",
+                "token-fixture",
+                "/private/fixture",
+                "next-action-fixture",
+                "opaque-fixture",
+            ] {
+                assert!(!output.contains(marker), "diagnostic leaked {marker}");
+            }
+        }
+    }
 
     mod existing_host_adapter {
         include!(concat!(
