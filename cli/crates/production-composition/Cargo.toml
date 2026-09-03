@@ -8,7 +8,7 @@ publish = false
 autobins = false
 
 [features]
-internal-diagnostics = ["dep:libc"]
+internal-diagnostics = ["dep:libc", "apppilotkit-host-runtime/internal-diagnostics"]
 
 [lib]
 path = "src/lib.rs"

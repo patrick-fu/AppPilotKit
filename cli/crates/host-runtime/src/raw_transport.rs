@@ -88,11 +88,25 @@ fn platform_failure(failure: PlatformFailure) -> TransportFailure {
             CloseReason::InternalError
         }
     };
-    if kind == PlatformFailureKind::CleanupFailed {
+    let transport = if kind == PlatformFailureKind::CleanupFailed {
         TransportFailure::cleanup_failed(reason)
     } else {
         TransportFailure::new(reason)
+    };
+    #[cfg(feature = "internal-diagnostics")]
+    {
+        if kind == PlatformFailureKind::Rejected {
+            return transport.with_bootstrap_origin(BootstrapFailureOrigin::AdapterRejected);
+        }
     }
+    transport
+}
+
+#[cfg(feature = "internal-diagnostics")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BootstrapFailureOrigin {
+    AdapterRejected,
+    AckBindingMismatch,
 }
 
 /// All terminal information this layer is allowed to pass to its caller.
@@ -101,6 +115,8 @@ pub(crate) struct TransportFailure {
     pub(crate) close_reason: CloseReason,
     pub(crate) handoff: HandoffState,
     pub(crate) cleanup_failed: bool,
+    #[cfg(feature = "internal-diagnostics")]
+    pub(crate) bootstrap_origin: Option<BootstrapFailureOrigin>,
 }
 
 impl TransportFailure {
@@ -109,6 +125,8 @@ impl TransportFailure {
             close_reason,
             handoff: HandoffState::NotHandedOff,
             cleanup_failed: false,
+            #[cfg(feature = "internal-diagnostics")]
+            bootstrap_origin: None,
         }
     }
 
@@ -117,6 +135,8 @@ impl TransportFailure {
             close_reason,
             handoff: HandoffState::NotHandedOff,
             cleanup_failed: true,
+            #[cfg(feature = "internal-diagnostics")]
+            bootstrap_origin: None,
         }
     }
 
@@ -133,6 +153,12 @@ impl TransportFailure {
 
     const fn with_cleanup_failed(mut self) -> Self {
         self.cleanup_failed = true;
+        self
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    const fn with_bootstrap_origin(mut self, origin: BootstrapFailureOrigin) -> Self {
+        self.bootstrap_origin = Some(origin);
         self
     }
 }
@@ -640,7 +666,7 @@ pub(crate) fn bootstrap(
         let ack_outer = reader.read_outer(bootstrap.as_ref(), deadline)?;
         let (ack, lease) = ack_receiver
             .read_ack(&ack_outer)
-            .map_err(|error| c1_failure_after_close(bootstrap.as_ref(), error, deadline))?;
+            .map_err(|error| bootstrap_ack_failure(bootstrap.as_ref(), error, deadline))?;
         Ok((ack, lease, reader))
     })();
 
@@ -667,6 +693,30 @@ pub(crate) fn bootstrap(
                 Err(_) => Err(failure.with_cleanup_failed()),
             }
         }
+    }
+}
+
+fn bootstrap_ack_failure(
+    raw: &dyn RawDuplex,
+    error: apppilotkit_transport_crypto_core::Error,
+    deadline: AbsoluteDeadline,
+) -> TransportFailure {
+    #[cfg(feature = "internal-diagnostics")]
+    let close_reason = error.close_reason();
+    let failure = c1_failure_after_close(raw, error, deadline);
+    #[cfg(feature = "internal-diagnostics")]
+    if let Some(origin) = bootstrap_ack_failure_origin(close_reason) {
+        return failure.with_bootstrap_origin(origin);
+    }
+    failure
+}
+
+#[cfg(feature = "internal-diagnostics")]
+fn bootstrap_ack_failure_origin(close_reason: CloseReason) -> Option<BootstrapFailureOrigin> {
+    if close_reason == CloseReason::BindingMismatch {
+        Some(BootstrapFailureOrigin::AckBindingMismatch)
+    } else {
+        None
     }
 }
 
@@ -1175,6 +1225,22 @@ mod tests {
                 failure.cleanup_failed,
                 kind == PlatformFailureKind::CleanupFailed
             );
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn bootstrap_failure_origins_are_closed_to_the_two_probe_sources() {
+        assert_eq!(
+            platform_failure(PlatformFailure::new(PlatformFailureKind::Rejected)).bootstrap_origin,
+            Some(BootstrapFailureOrigin::AdapterRejected)
+        );
+        assert_eq!(
+            bootstrap_ack_failure_origin(CloseReason::BindingMismatch),
+            Some(BootstrapFailureOrigin::AckBindingMismatch)
+        );
+        for close_reason in [CloseReason::AuthenticationFailed, CloseReason::Malformed] {
+            assert_eq!(bootstrap_ack_failure_origin(close_reason), None);
         }
     }
 

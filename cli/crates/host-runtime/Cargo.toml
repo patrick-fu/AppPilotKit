@@ -9,6 +9,9 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+[features]
+internal-diagnostics = []
+
 [dependencies]
 apppilotkit-transport-crypto-core = { path = "../../../transport/crypto-core" }
 base64 = "=0.22.1"
