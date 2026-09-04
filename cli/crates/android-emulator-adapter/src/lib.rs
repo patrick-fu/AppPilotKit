@@ -515,11 +515,13 @@ fn parse_forward_list(output: &str) -> Result<Vec<ForwardEntry>, PlatformFailure
 }
 
 fn normalize_forward_list(output: &str) -> Result<&str, PlatformFailure> {
-    // An empty `adb forward --list` may be represented by exactly two LF bytes.
-    // Keep this exception scoped to the list parser; other command outputs remain
-    // subject to the ordinary one-line normalization rule.
-    if output == "\n\n" {
-        Ok("")
+    // `adb forward --list` may append one empty record after either an empty
+    // list or one or more mappings. Keep that exception scoped to this parser.
+    if let Some(entries) = output.strip_suffix("\n\n") {
+        if entries.ends_with('\n') {
+            return Err(failure(PlatformFailureKind::Rejected));
+        }
+        Ok(entries)
     } else {
         strip_one_line_ending(output)
     }

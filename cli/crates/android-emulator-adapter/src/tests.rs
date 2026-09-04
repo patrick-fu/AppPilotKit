@@ -874,7 +874,8 @@ fn verified_forward_connect_timeout_removes_only_the_exact_mapping_and_keeps_pri
     drop(listener);
     let localabstract = "apppilotkit-android-0123456789abcdef0123456789abcdef".to_owned();
     let remote = format!("localabstract:{localabstract}");
-    let mapping = format!("{SERIAL} tcp:{port} {remote}\n");
+    let mapping_entry = format!("{SERIAL} tcp:{port} {remote}\n");
+    let mapping = format!("{mapping_entry}\n");
     let foreign = format!("{SERIAL} tcp:49999 localabstract:foreign\n");
     let start = format!(
         "Stopping: {PACKAGE}\nStarting: Intent {{ cmp={COMPONENT} (has extras) }}\nStatus: ok\nLaunchState: COLD\nActivity: {COMPONENT}\nTotalTime: 1\nWaitTime: 2\nComplete\n"
@@ -901,9 +902,12 @@ fn verified_forward_connect_timeout_removes_only_the_exact_mapping_and_keeps_pri
         ok(&["forward", "--list"], ""),
         ok(&["forward", "tcp:0", &remote], format!("{port}\n")),
         ok(&["forward", "--list"], &mapping),
-        ok(&["forward", "--list"], format!("{mapping}{foreign}")),
+        ok(
+            &["forward", "--list"],
+            format!("{mapping_entry}{foreign}\n"),
+        ),
         ok(&["forward", "--remove", &format!("tcp:{port}")], ""),
-        ok(&["forward", "--list"], foreign),
+        ok(&["forward", "--list"], format!("{foreign}\n")),
         ok(&["shell", "am", "force-stop", PACKAGE], ""),
     ]);
     let pending = AndroidPendingLaunch {
