@@ -865,6 +865,34 @@ fn wrong_binding_prepare_preserves_authentication_failure_when_cleanup_fails() {
     assert_eq!(launches.load(Ordering::SeqCst), 1);
 }
 
+#[cfg(feature = "internal-diagnostics")]
+#[test]
+fn adapter_rejected_prepare_carries_only_the_adapter_diagnostic_marker() {
+    let adapter = Arc::new(FakeAdapter {
+        cleanup_calls: Arc::new(AtomicUsize::new(0)),
+        launches: Arc::new(AtomicUsize::new(0)),
+        connections: Arc::new(AtomicUsize::new(0)),
+        wrong_binding: false,
+        wrong_endpoint: false,
+        abort_fails: false,
+        launch_failure: Some(PlatformFailureKind::Rejected),
+        launch_gate: None,
+        launch_started: None,
+        launch_release: None,
+        cleanup_fails: false,
+        cleanup_started: None,
+        cleanup_release: None,
+    });
+    let broker = SessionBroker::new(Arc::clone(&adapter) as _, Arc::clone(&adapter) as _).unwrap();
+    let error = broker
+        .handle(prepare_request(42, [0x42; 32]))
+        .expect_err("adapter rejection must fail prepare");
+
+    assert_eq!(error.stage, apppilotkit_host_runtime::ErrorStage::Bootstrap);
+    assert_eq!(error.close_reason, CloseReason::BindingMismatch);
+    assert_eq!(error.message, "bootstrap_adapter_rejected");
+}
+
 #[test]
 fn descriptor_endpoint_rejection_consumes_pending_launch_once() {
     let cleanup = Arc::new(AtomicUsize::new(0));

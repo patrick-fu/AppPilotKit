@@ -1,8 +1,9 @@
 use apppilotkit_host_runtime::{
-    CloseReason, Closed, ControlPacketDecoder, ControlRequest, ControlResult, ControlSuccess,
-    ErrorKind, ExchangeBody, ExchangeComplete, HandoffState, OpenSessionBody, Platform,
-    PrepareBody, ReadyReference, ReadyTarget, Request, SessionOpened, SideEffect,
-    decode_request_packet, decode_result_packet, encode_request_packet, encode_success_packet,
+    CloseReason, Closed, ControlFailure, ControlPacketDecoder, ControlRequest, ControlResult,
+    ControlSuccess, ErrorKind, ErrorStage, ExchangeBody, ExchangeComplete, HandoffState,
+    OpenSessionBody, Platform, PrepareBody, ReadyReference, ReadyTarget, Request, SessionOpened,
+    SideEffect, decode_request_packet, decode_result_packet, encode_failure_packet,
+    encode_request_packet, encode_success_packet,
 };
 use sha2::{Digest, Sha256};
 
@@ -110,6 +111,81 @@ fn safe_failure_literal_decodes_without_peer_payload() {
     assert_eq!(request_id, [0; 16]);
     assert_eq!(error.kind, ErrorKind::SessionExpired);
     assert_eq!(error.close_reason, CloseReason::Stale);
+}
+
+#[test]
+fn stock_bootstrap_failure_packet_is_byte_exact() {
+    let failure = ControlFailure {
+        kind: ErrorKind::SessionExpired,
+        message: "Target session expired",
+        retryable: false,
+        stage: ErrorStage::Bootstrap,
+        handoff: HandoffState::NotHandedOff,
+        close_reason: CloseReason::BindingMismatch,
+    };
+    let expected = hex(
+        "0000003ba4000101500000000000000000000000000000000002f403a6000101765461726765742073657373696f6e206578706972656402f4030204000502",
+    );
+    let packet = encode_failure_packet([0; 16], &failure).expect("stock failure packet");
+    assert_eq!(packet, expected);
+    assert_eq!(
+        decode_result_packet(&packet),
+        Ok(ControlResult::Failure {
+            request_id: [0; 16],
+            error: failure,
+        })
+    );
+}
+
+#[cfg(feature = "internal-diagnostics")]
+#[test]
+fn diagnostic_bootstrap_markers_are_the_only_extra_stock_messages() {
+    for marker in [
+        "bootstrap_adapter_rejected",
+        "bootstrap_ack_binding_mismatch",
+    ] {
+        let failure = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: marker,
+            retryable: false,
+            stage: ErrorStage::Bootstrap,
+            handoff: HandoffState::NotHandedOff,
+            close_reason: CloseReason::BindingMismatch,
+        };
+        let packet = encode_failure_packet([0x44; 16], &failure).expect("marker packet");
+        assert_eq!(
+            decode_result_packet(&packet),
+            Ok(ControlResult::Failure {
+                request_id: [0x44; 16],
+                error: failure,
+            })
+        );
+    }
+}
+
+#[cfg(not(feature = "internal-diagnostics"))]
+#[test]
+fn diagnostic_bootstrap_markers_are_not_stock_messages_by_default() {
+    for marker in [
+        "bootstrap_adapter_rejected",
+        "bootstrap_ack_binding_mismatch",
+    ] {
+        let failure = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: marker,
+            retryable: false,
+            stage: ErrorStage::Bootstrap,
+            handoff: HandoffState::NotHandedOff,
+            close_reason: CloseReason::BindingMismatch,
+        };
+        let packet = encode_failure_packet([0x45; 16], &failure).expect("marker packet");
+        let ControlResult::Failure { error, .. } =
+            decode_result_packet(&packet).expect("marker packet decodes")
+        else {
+            panic!("marker packet must remain a failure");
+        };
+        assert_eq!(error.message, "Peer returned a safe Broker failure");
+    }
 }
 
 #[test]

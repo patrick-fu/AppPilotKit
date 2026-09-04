@@ -19,6 +19,10 @@ use apppilotkit_host_runtime::{
     ReadyReference, Request, RuntimePaths, SessionBroker, SideEffect, decode_result_packet,
     encode_failure_packet, encode_request_packet, encode_success_packet,
 };
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use signal_hook::{
@@ -44,7 +48,10 @@ use std::{
 
 #[cfg(feature = "internal-diagnostics")]
 mod internal_diagnostics {
-    use super::{CloseReason, ControlFailure, File, Mutex, Value, Write};
+    use super::{
+        CloseReason, ControlFailure, File, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, Mutex, Value, Write,
+    };
     use apppilotkit_host_runtime::ErrorStage;
     use std::{
         env,
@@ -89,19 +96,33 @@ mod internal_diagnostics {
                 CloseReason::CleanupFailed => "cleanup_failed",
                 CloseReason::InternalError => "internal_error",
             };
-            let reason_code = match (failure.stage, failure.close_reason) {
-                // The private control result does not preserve which Prepare
-                // branch produced BindingMismatch, so this code deliberately
-                // groups an in-progress Prepare with other prepare bindings.
-                (ErrorStage::Prepare, CloseReason::BindingMismatch) => "prepare_binding_mismatch",
-                (_, CloseReason::Stale | CloseReason::EligibilityLost) => "lease_stale",
-                (_, CloseReason::BrokerLost) => "broker_lost",
-                (_, CloseReason::BindingMismatch) => "binding_mismatch",
-                (_, CloseReason::PeerClosed) => "peer_closed",
-                (_, CloseReason::Malformed | CloseReason::SequenceViolation) => "malformed",
-                (_, CloseReason::Timeout) => "timeout",
-                (_, CloseReason::InternalError | CloseReason::CleanupFailed) => "internal",
-                _ => "other",
+            let is_bootstrap_binding_mismatch = failure.stage == ErrorStage::Bootstrap
+                && failure.close_reason == CloseReason::BindingMismatch;
+            let reason_code = if is_bootstrap_binding_mismatch
+                && failure.message == INTERNAL_BOOTSTRAP_ADAPTER_REJECTED
+            {
+                "bootstrap_adapter_rejected"
+            } else if is_bootstrap_binding_mismatch
+                && failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
+            {
+                "bootstrap_ack_binding_mismatch"
+            } else {
+                match (failure.stage, failure.close_reason) {
+                    // The private control result does not preserve which Prepare
+                    // branch produced BindingMismatch, so this code deliberately
+                    // groups an in-progress Prepare with other prepare bindings.
+                    (ErrorStage::Prepare, CloseReason::BindingMismatch) => {
+                        "prepare_binding_mismatch"
+                    }
+                    (_, CloseReason::Stale | CloseReason::EligibilityLost) => "lease_stale",
+                    (_, CloseReason::BrokerLost) => "broker_lost",
+                    (_, CloseReason::BindingMismatch) => "binding_mismatch",
+                    (_, CloseReason::PeerClosed) => "peer_closed",
+                    (_, CloseReason::Malformed | CloseReason::SequenceViolation) => "malformed",
+                    (_, CloseReason::Timeout) => "timeout",
+                    (_, CloseReason::InternalError | CloseReason::CleanupFailed) => "internal",
+                    _ => "other",
+                }
             };
             Self {
                 stage,
@@ -173,6 +194,24 @@ fn record_prepare_failure(failure: &ControlFailure) {
 
 #[cfg(not(feature = "internal-diagnostics"))]
 fn record_prepare_failure(_: &ControlFailure) {}
+
+#[cfg(feature = "internal-diagnostics")]
+fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
+    if failure.stage == apppilotkit_host_runtime::ErrorStage::Bootstrap
+        && failure.close_reason == CloseReason::BindingMismatch
+        && (failure.message == INTERNAL_BOOTSTRAP_ADAPTER_REJECTED
+            || failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH)
+    {
+        "Target session expired"
+    } else {
+        failure.message
+    }
+}
+
+#[cfg(not(feature = "internal-diagnostics"))]
+fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
+    failure.message
+}
 
 const IPC_READ_CAP: usize = 67_109_124;
 const IPC_BUFFER: usize = 16 * 1024;
@@ -1154,17 +1193,27 @@ pub fn render_prepare_error(error: &PrepareError) -> Value {
             "input",
         ),
         PrepareError::Broker(error) => match error.kind {
-            ErrorKind::TargetSelectionRequired => {
-                ("target.selectionRequired", error.message, "broker")
-            }
-            ErrorKind::SessionExpired => ("sessionExpired", error.message, "broker"),
+            ErrorKind::TargetSelectionRequired => (
+                "target.selectionRequired",
+                public_prepare_failure_message(error),
+                "broker",
+            ),
+            ErrorKind::SessionExpired => (
+                "sessionExpired",
+                public_prepare_failure_message(error),
+                "broker",
+            ),
             ErrorKind::TransportAuthenticationRequired => (
                 "transport.authenticationRequired",
-                error.message,
+                public_prepare_failure_message(error),
                 "bootstrap",
             ),
-            ErrorKind::Timeout => ("timeout", error.message, "broker"),
-            ErrorKind::InternalError => ("internalError", error.message, "broker"),
+            ErrorKind::Timeout => ("timeout", public_prepare_failure_message(error), "broker"),
+            ErrorKind::InternalError => (
+                "internalError",
+                public_prepare_failure_message(error),
+                "broker",
+            ),
         },
     };
     serde_json::json!({"schema_version":"1.0","status":"failed","error":{"kind":kind,"message":message,"retryable":false,"stage":stage}})
@@ -1258,6 +1307,48 @@ mod tests {
             ] {
                 assert!(!output.contains(marker), "diagnostic leaked {marker}");
             }
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn bootstrap_markers_survive_private_cbor_but_leave_public_prepare_json_unchanged() {
+        let normal = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: "Target session expired",
+            retryable: false,
+            stage: ErrorStage::Bootstrap,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            close_reason: CloseReason::BindingMismatch,
+        };
+        let expected =
+            serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(normal.clone())))
+                .expect("public prepare JSON");
+        for marker in [
+            INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
+            INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+        ] {
+            let marked = ControlFailure {
+                message: marker,
+                ..normal.clone()
+            };
+            let packet = encode_failure_packet([0x52; 16], &marked).expect("marker packet");
+            let ControlResult::Failure { request_id, error } =
+                decode_result_packet(&packet).expect("marker packet decodes")
+            else {
+                panic!("marker packet must remain a failure");
+            };
+            assert_eq!(request_id, [0x52; 16]);
+            assert_eq!(error.message, marker);
+            assert_eq!(
+                serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(error.clone())))
+                    .expect("marked public prepare JSON"),
+                expected,
+                "the internal marker must not alter public CLI bytes"
+            );
+            let diagnostic = internal_diagnostics::diagnostic_value(&error);
+            assert_eq!(diagnostic["reason_code"], marker);
+            assert_eq!(diagnostic.as_object().map(|value| value.len()), Some(3));
         }
     }
 

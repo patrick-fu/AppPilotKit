@@ -8,6 +8,11 @@ use crate::{
     },
     raw_transport::{self, BootstrapSuccess, TransportFailure},
 };
+#[cfg(feature = "internal-diagnostics")]
+use crate::{
+    INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH, INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
+    raw_transport::BootstrapFailureOrigin,
+};
 use apppilotkit_transport_crypto_core::{
     BootstrapBinding, BrokerLeaseConnection, BrokerSession, BrokerStaticKeypair,
     ProcessBootstrapSecret, SessionBinding,
@@ -851,6 +856,8 @@ impl SessionBroker {
                             close_reason: failure.close_reason,
                             handoff: HandoffState::NotHandedOff,
                             cleanup_failed: false,
+                            #[cfg(feature = "internal-diagnostics")]
+                            bootstrap_origin: None,
                         })?;
                     raw_transport::bootstrap(
                         raw,
@@ -896,6 +903,12 @@ impl SessionBroker {
         if let Some(reason) =
             commit_rejection_reason(completed, reservation.deadline, binding_matches)
         {
+            #[cfg(feature = "internal-diagnostics")]
+            if let Some(origin) = commit_rejection_origin(reason) {
+                return self
+                    .discard_prepared(reservation, prepared, reason)
+                    .map_err(|failure| mark_bootstrap_origin(failure, origin));
+            }
             return self.discard_prepared(reservation, prepared, reason);
         }
         let expires = completed
@@ -1041,6 +1054,10 @@ impl SessionBroker {
         match self.reject_with_cleanup(reservation, error.close_reason, error.cleanup_failed) {
             Err(mut failure) => {
                 failure.handoff = error.handoff;
+                #[cfg(feature = "internal-diagnostics")]
+                if let Some(origin) = error.bootstrap_origin {
+                    failure = mark_bootstrap_origin(failure, origin);
+                }
                 Err(failure)
             }
             Ok(_) => unreachable!("bootstrap rejection cannot succeed"),
@@ -1848,6 +1865,8 @@ impl SessionBroker {
                             close_reason: CloseReason::SequenceViolation,
                             handoff: HandoffState::NotHandedOff,
                             cleanup_failed: false,
+                            #[cfg(feature = "internal-diagnostics")]
+                            bootstrap_origin: None,
                         })
                     }
                 })
@@ -2245,6 +2264,27 @@ fn transport_fail(stage: ErrorStage, error: TransportFailure) -> ControlFailure 
     result
 }
 
+#[cfg(feature = "internal-diagnostics")]
+fn commit_rejection_origin(reason: CloseReason) -> Option<BootstrapFailureOrigin> {
+    if reason == CloseReason::BindingMismatch {
+        Some(BootstrapFailureOrigin::AckBindingMismatch)
+    } else {
+        None
+    }
+}
+
+#[cfg(feature = "internal-diagnostics")]
+fn mark_bootstrap_origin(
+    mut failure: ControlFailure,
+    origin: BootstrapFailureOrigin,
+) -> ControlFailure {
+    failure.message = match origin {
+        BootstrapFailureOrigin::AdapterRejected => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
+        BootstrapFailureOrigin::AckBindingMismatch => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+    };
+    failure
+}
+
 const fn platform_launch_reason(kind: PlatformFailureKind) -> CloseReason {
     match kind {
         PlatformFailureKind::CleanupFailed => CloseReason::CleanupFailed,
@@ -2257,11 +2297,17 @@ const fn platform_launch_reason(kind: PlatformFailureKind) -> CloseReason {
     }
 }
 
-const fn platform_launch_failure(failure: PlatformFailure) -> TransportFailure {
+fn platform_launch_failure(failure: PlatformFailure) -> TransportFailure {
     TransportFailure {
         close_reason: platform_launch_reason(failure.primary_kind()),
         handoff: HandoffState::NotHandedOff,
         cleanup_failed: failure.cleanup_failed(),
+        #[cfg(feature = "internal-diagnostics")]
+        bootstrap_origin: if failure.primary_kind() == PlatformFailureKind::Rejected {
+            Some(BootstrapFailureOrigin::AdapterRejected)
+        } else {
+            None
+        },
     }
 }
 
@@ -2276,6 +2322,23 @@ mod platform_launch_failure_tests {
         ));
         assert_eq!(failure.close_reason, CloseReason::Timeout);
         assert!(failure.cleanup_failed);
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn adapter_rejection_and_defensive_ack_comparison_have_distinct_origins() {
+        assert_eq!(
+            platform_launch_failure(PlatformFailure::cleanup_failed_after(
+                PlatformFailureKind::Rejected,
+            ))
+            .bootstrap_origin,
+            Some(BootstrapFailureOrigin::AdapterRejected)
+        );
+        assert_eq!(
+            commit_rejection_origin(CloseReason::BindingMismatch),
+            Some(BootstrapFailureOrigin::AckBindingMismatch)
+        );
+        assert_eq!(commit_rejection_origin(CloseReason::Timeout), None);
     }
 }
 
@@ -2807,6 +2870,138 @@ mod lifecycle_tests {
             commit_rejection_reason(clock.now().expect("test clock"), deadline, false),
             Some(CloseReason::BindingMismatch),
             "only a timely bad acknowledgement is a binding mismatch"
+        );
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn authenticated_ack_commit_mismatch_survives_broker_ipc_as_the_ack_marker() {
+        let operations = Arc::new(LeaseOperations::new());
+        let adapter: Arc<dyn PlatformTargetAdapter> = Arc::new(NeverAdapter);
+        let key = PrepareKey {
+            platform: Platform::IosSimulator,
+            device: "device".into(),
+            app: "app".into(),
+            digest: [0x61; 32],
+        };
+        let token = [0x62; 32];
+        let lease_id = [0x63; 16];
+        let deadline = 2;
+        let lease = Lease {
+            key: key.clone(),
+            state: LeaseState::Preparing,
+            lease_id,
+            generation: 0,
+            epoch: 0,
+            nk_hash: [0; 32],
+            pbs: None,
+            control: None,
+            lease_crypto: None,
+            control_reader: None,
+            connector: None,
+            cleanup: None,
+            _adapter: Arc::clone(&adapter),
+            references: HashMap::from([(
+                token,
+                Reference {
+                    state: RefState::Pending,
+                    issued: 0,
+                    expires: deadline,
+                    session_slot: None,
+                    session_id: None,
+                },
+            )]),
+            sessions: HashMap::new(),
+            next_session: 1,
+            created: 0,
+            last_heartbeat_attempt: 0,
+            last_heartbeat_success: 0,
+            heartbeat_counter: 1,
+            heartbeat_misses: 0,
+            last_client_activity: 0,
+            terminal_cleanup_failed: false,
+            terminal_reason: None,
+            terminal_handoff: HandoffState::NotHandedOff,
+            handoff: HandoffState::NotHandedOff,
+            operations: Arc::clone(&operations),
+        };
+        let clock = Arc::new(TestClock(AtomicU64::new(1)));
+        let broker = SessionBroker {
+            inner: Arc::new(Mutex::new(Core {
+                leases: vec![Some(lease)],
+                failed: HashMap::new(),
+                stale_tokens: HashMap::new(),
+                ios: Arc::clone(&adapter),
+                android: adapter,
+                shutting_down: false,
+                entropy: File::open("/dev/urandom").expect("entropy"),
+            })),
+            pending_reapers: Arc::new(AtomicUsize::new(0)),
+            clock: Arc::clone(&clock) as Arc<dyn Clock>,
+        };
+        let binding = BootstrapBinding {
+            target_reference_digest: key.digest,
+            lease_id,
+            target_nonce: [0x64; 32],
+            app_artifact_digest: [0x65; 32],
+            expiry_ms: deadline,
+        };
+        let keypair = BrokerStaticKeypair::generate().expect("broker keypair");
+        let mut target =
+            TargetBootstrap::new(binding.clone(), keypair.public_key()).expect("target bootstrap");
+        let pbs = ProcessBootstrapSecret::generate().expect("bootstrap secret");
+        let bootstrap = BrokerBootstrap::new(binding, keypair.into_private_key(), &pbs)
+            .expect("broker bootstrap");
+        let m1 = target.write_m1().expect("target M1");
+        let (m2, receiver) = bootstrap.read_m1_write_m2(&m1).expect("broker M2");
+        let (sender, _) = target.read_m2(&m2, 7, 1).expect("target ACK sender");
+        let (ack_outer, _) = sender.write_ack().expect("authenticated ACK");
+        let (mut ack, lease_crypto) = receiver
+            .read_ack(&ack_outer)
+            .expect("broker authenticates ACK");
+        assert_eq!(ack.listener_epoch, 1);
+        ack.listener_epoch = 2;
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let prepared = Prepared {
+            success: BootstrapSuccess {
+                ack,
+                lease: lease_crypto,
+                bootstrap: Arc::new(CountingRaw(Arc::new(AtomicUsize::new(0)))),
+                connector: Arc::new(CountingConnector(Arc::new(AtomicUsize::new(0)))),
+                cleanup: Box::new(CountCleanup(Arc::clone(&cleanup_calls))),
+                reader: raw_transport::RawFrameReader::new(),
+            },
+            pbs,
+            operation: operations
+                .enter(Cancellation::new())
+                .expect("prepared operation"),
+        };
+        let failure = broker
+            .commit(
+                CompletionReservation {
+                    index: 0,
+                    key,
+                    token,
+                    digest: [0x61; 32],
+                    lease_id,
+                    deadline,
+                },
+                prepared,
+            )
+            .expect_err("defensive commit must reject the altered authenticated ACK");
+
+        assert_eq!(failure.stage, ErrorStage::Bootstrap);
+        assert_eq!(failure.close_reason, CloseReason::BindingMismatch);
+        assert_eq!(failure.message, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        let packet =
+            crate::encode_failure_packet([0x66; 16], &failure).expect("Broker IPC failure");
+        assert_eq!(
+            crate::decode_result_packet(&packet),
+            Ok(crate::ControlResult::Failure {
+                request_id: [0x66; 16],
+                error: failure,
+            })
         );
     }
 

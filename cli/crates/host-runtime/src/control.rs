@@ -11,6 +11,14 @@ pub const NON_EXCHANGE_CBOR_CAP: usize = 8_192;
 pub const READY_REFERENCE_TTL_MS: u64 = 30_000;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
+// These feature-gated strings are the complete private diagnostic vocabulary
+// which may cross the frozen failure-message field. They are normalized before
+// any public CLI rendering.
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct ReadyReference([u8; 32]);
 impl ReadyReference {
@@ -838,6 +846,10 @@ fn decode_failure_body(decoder: &mut Decoder<'_>) -> Result<ControlFailure, Cont
         "Target transport authentication failed" => "Target transport authentication failed",
         "Broker operation timed out" => "Broker operation timed out",
         "Broker operation failed" => "Broker operation failed",
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
         _ if !message.is_empty()
             && message.len() <= 256
             && !message
