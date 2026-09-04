@@ -1,3 +1,25 @@
+#if APPPILOTKIT_INTERNAL
+@MainActor
+struct SmokeHostTransportLifecycle {
+  private var isTerminating = false
+  private var transportStartRequested = false
+
+  mutating func beginTransportStart() -> Bool {
+    guard !isTerminating, !transportStartRequested else { return false }
+    transportStartRequested = true
+    return true
+  }
+
+  mutating func beginTermination() {
+    isTerminating = true
+  }
+
+  var shouldStopCompletedTransport: Bool {
+    isTerminating
+  }
+}
+#endif
+
 #if APPPILOTKIT_INTERNAL && canImport(UIKit)
 import AppPilotKit
 @_spi(AppPilotKitTargetTransportInternal) import AppPilotKitTargetTransportInternal
@@ -7,6 +29,7 @@ import UIKit
 @MainActor
 final class SmokeHostAppDelegate: UIResponder, UIApplicationDelegate {
   private var transport: AppPilotKitTargetTransport?
+  private var lifecycle = SmokeHostTransportLifecycle()
   var window: UIWindow?
 
   func application(
@@ -18,20 +41,31 @@ final class SmokeHostAppDelegate: UIResponder, UIApplicationDelegate {
     window.makeKeyAndVisible()
     self.window = window
 
+    return true
+  }
+
+  func applicationDidBecomeActive(_ application: UIApplication) {
+    guard lifecycle.beginTransportStart() else { return }
     Task { [weak self] in
+      guard let self, !self.lifecycle.shouldStopCompletedTransport else { return }
       do {
-        self?.transport = try await AppPilotKitTargetTransport.startFromEnvironment(
+        let started = try await AppPilotKitTargetTransport.startFromEnvironment(
           compositionFactory: makeSmokeComposition
         )
+        guard !self.lifecycle.shouldStopCompletedTransport else {
+          await started.stop()
+          return
+        }
+        self.transport = started
       } catch {
         // A normal manual launch deliberately has no descriptor and therefore
         // no listener. The Broker-owned launch is the only bootstrap path.
       }
     }
-    return true
   }
 
   func applicationWillTerminate(_ application: UIApplication) {
+    lifecycle.beginTermination()
     let active = transport
     transport = nil
     Task { await active?.stop() }
