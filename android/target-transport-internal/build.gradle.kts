@@ -89,9 +89,9 @@ val rustTasks = rustAbis.map { abi ->
         }
         environment(
             abi.linkerEnvironment,
-            ndkHostToolchainDirectory.map {
-                it.resolve("bin/${abi.linkerBinary}$ndkLinkerExecutableSuffix").absolutePath
-            },
+            ndkHostToolchainDirectory.get()
+                .resolve("bin/${abi.linkerBinary}$ndkLinkerExecutableSuffix")
+                .absolutePath,
         )
         environment("RUSTFLAGS", rustFlags)
         commandLine("cargo", "build", "--locked", "--release", "--target", abi.rustTarget)
