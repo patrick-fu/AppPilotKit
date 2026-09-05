@@ -11,7 +11,8 @@ use crate::{
 #[cfg(feature = "internal-diagnostics")]
 use crate::{
     INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH, INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
-    raw_transport::BootstrapFailureOrigin,
+    INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT, INTERNAL_TARGET_NO_SESSION_FRAMES,
+    raw_transport::{BootstrapFailureOrigin, SessionFailureOrigin},
 };
 use apppilotkit_transport_crypto_core::{
     BootstrapBinding, BrokerLeaseConnection, BrokerSession, BrokerStaticKeypair,
@@ -858,6 +859,8 @@ impl SessionBroker {
                             cleanup_failed: false,
                             #[cfg(feature = "internal-diagnostics")]
                             bootstrap_origin: None,
+                            #[cfg(feature = "internal-diagnostics")]
+                            session_origin: None,
                         })?;
                     raw_transport::bootstrap(
                         raw,
@@ -1258,7 +1261,18 @@ impl SessionBroker {
             drop(core);
             drop(_operation);
             let _ = self.terminalize_lease(lease_index, reason);
-            return Err(fail(ErrorStage::SessionOpen, reason));
+            let failure = fail(ErrorStage::SessionOpen, reason);
+            #[cfg(feature = "internal-diagnostics")]
+            if opened.is_ok() {
+                return Err(mark_session_origin(
+                    failure,
+                    SessionFailureOrigin::LeaseTerminalBeforeSessionCommit,
+                ));
+            }
+            #[cfg(not(feature = "internal-diagnostics"))]
+            return Err(failure);
+            #[cfg(feature = "internal-diagnostics")]
+            return Err(failure);
         }
         let lease = core.leases[lease_index]
             .as_mut()
@@ -1308,8 +1322,8 @@ impl SessionBroker {
                 }))
             }
             Err(error) => {
-                if let Some(r) = lease.references.get_mut(&request.body.target_token) {
-                    r.state = RefState::Stale;
+                if let Some(reference) = lease.references.get_mut(&request.body.target_token) {
+                    reference.state = RefState::Stale;
                 }
                 Err(transport_fail(ErrorStage::SessionOpen, error))
             }
@@ -1867,6 +1881,8 @@ impl SessionBroker {
                             cleanup_failed: false,
                             #[cfg(feature = "internal-diagnostics")]
                             bootstrap_origin: None,
+                            #[cfg(feature = "internal-diagnostics")]
+                            session_origin: None,
                         })
                     }
                 })
@@ -2261,6 +2277,10 @@ fn token_failure(core: &Core, stage: ErrorStage, token: &[u8; 32]) -> ControlFai
 fn transport_fail(stage: ErrorStage, error: TransportFailure) -> ControlFailure {
     let mut result = fail(stage, error.close_reason);
     result.handoff = error.handoff;
+    #[cfg(feature = "internal-diagnostics")]
+    if let Some(origin) = error.session_origin {
+        result = mark_session_origin(result, origin);
+    }
     result
 }
 
@@ -2281,6 +2301,20 @@ fn mark_bootstrap_origin(
     failure.message = match origin {
         BootstrapFailureOrigin::AdapterRejected => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
         BootstrapFailureOrigin::AckBindingMismatch => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+    };
+    failure
+}
+
+#[cfg(feature = "internal-diagnostics")]
+fn mark_session_origin(
+    mut failure: ControlFailure,
+    origin: SessionFailureOrigin,
+) -> ControlFailure {
+    failure.message = match origin {
+        SessionFailureOrigin::TargetNoSessionFrames => INTERNAL_TARGET_NO_SESSION_FRAMES,
+        SessionFailureOrigin::LeaseTerminalBeforeSessionCommit => {
+            INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT
+        }
     };
     failure
 }
@@ -2308,6 +2342,8 @@ fn platform_launch_failure(failure: PlatformFailure) -> TransportFailure {
         } else {
             None
         },
+        #[cfg(feature = "internal-diagnostics")]
+        session_origin: None,
     }
 }
 
@@ -2472,6 +2508,148 @@ mod lifecycle_tests {
         ) -> Result<usize, crate::adapter::PlatformFailure> {
             self.writes.fetch_add(1, Ordering::SeqCst);
             self.clock.0.store(self.advance_to, Ordering::SeqCst);
+            Ok(input.len())
+        }
+
+        fn cancel(&self) {
+            self.cancels.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    struct ClockAdvancingSessionRaw {
+        target: Mutex<TargetSession>,
+        incoming: Mutex<VecDeque<u8>>,
+        phase: AtomicUsize,
+        cancels: AtomicUsize,
+        clock: Arc<TestClock>,
+        advance_to: u64,
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    impl ClockAdvancingSessionRaw {
+        fn new(
+            binding: SessionBinding,
+            pbs: &ProcessBootstrapSecret,
+            clock: Arc<TestClock>,
+            advance_to: u64,
+        ) -> Self {
+            let mut target = TargetSession::new(binding, pbs).expect("target session");
+            let incoming = target.write_m1().expect("target M1").into_iter().collect();
+            Self {
+                target: Mutex::new(target),
+                incoming: Mutex::new(incoming),
+                phase: AtomicUsize::new(0),
+                cancels: AtomicUsize::new(0),
+                clock,
+                advance_to,
+            }
+        }
+
+        fn queue(&self, frames: impl IntoIterator<Item = Vec<u8>>) {
+            let mut incoming = self.incoming.lock().expect("session peer input");
+            for frame in frames {
+                incoming.extend(frame);
+            }
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    impl RawDuplex for ClockAdvancingSessionRaw {
+        fn read(
+            &self,
+            output: &mut [u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut incoming = self.incoming.lock().expect("session peer input");
+            let count = output.len().min(incoming.len());
+            for byte in &mut output[..count] {
+                *byte = incoming.pop_front().expect("bounded session input");
+            }
+            Ok(count)
+        }
+
+        fn write(
+            &self,
+            input: &[u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut target = self.target.lock().expect("target session");
+            match self.phase.load(Ordering::SeqCst) {
+                0 => {
+                    target.read_m2(input).expect("broker M2");
+                    self.queue([target.write_finished().expect("target Finished")]);
+                    self.phase.store(1, Ordering::SeqCst);
+                }
+                1 => {
+                    target.read_finished(input).expect("broker Finished");
+                    self.phase.store(2, Ordering::SeqCst);
+                }
+                _ => {
+                    if target
+                        .read_application(input)
+                        .expect("broker application")
+                        .is_some()
+                    {
+                        self.queue(
+                            target
+                                .write_application_response(b"opened")
+                                .expect("target open response"),
+                        );
+                        self.clock.0.store(self.advance_to, Ordering::SeqCst);
+                    }
+                }
+            }
+            Ok(input.len())
+        }
+
+        fn cancel(&self) {
+            self.cancels.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    struct OneSessionConnector(Mutex<Option<Arc<dyn RawDuplex>>>);
+    #[cfg(feature = "internal-diagnostics")]
+    impl RawConnector for OneSessionConnector {
+        fn connect(
+            &self,
+            _: Cancellation,
+            _: AbsoluteDeadline,
+        ) -> Result<Arc<dyn RawDuplex>, crate::adapter::PlatformFailure> {
+            self.0
+                .lock()
+                .expect("one session connector")
+                .take()
+                .ok_or_else(|| crate::adapter::PlatformFailure::new(PlatformFailureKind::Internal))
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    struct ClockAdvancingReadFailureRaw {
+        cancels: AtomicUsize,
+        clock: Arc<TestClock>,
+        advance_to: u64,
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    impl RawDuplex for ClockAdvancingReadFailureRaw {
+        fn read(
+            &self,
+            _: &mut [u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            self.clock.0.store(self.advance_to, Ordering::SeqCst);
+            Err(crate::adapter::PlatformFailure::new(
+                PlatformFailureKind::Eof,
+            ))
+        }
+
+        fn write(
+            &self,
+            input: &[u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
             Ok(input.len())
         }
 
@@ -3002,6 +3180,256 @@ mod lifecycle_tests {
                 request_id: [0x66; 16],
                 error: failure,
             })
+        );
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn session_diagnostic_origins_are_a_closed_message_vocabulary() {
+        for (origin, message) in [
+            (
+                SessionFailureOrigin::TargetNoSessionFrames,
+                INTERNAL_TARGET_NO_SESSION_FRAMES,
+            ),
+            (
+                SessionFailureOrigin::LeaseTerminalBeforeSessionCommit,
+                INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
+            ),
+        ] {
+            let failure = transport_fail(
+                ErrorStage::SessionOpen,
+                TransportFailure {
+                    close_reason: CloseReason::BindingMismatch,
+                    handoff: HandoffState::NotHandedOff,
+                    cleanup_failed: false,
+                    bootstrap_origin: None,
+                    session_origin: Some(origin),
+                },
+            );
+            assert_eq!(failure.message, message);
+            assert_eq!(failure.kind, ErrorKind::SessionExpired);
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn missing_initial_session_frames_marks_target_no_session_frames() {
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let base = now().expect("system clock");
+        let deadline = base + 10_000;
+        let token = [0x61; 32];
+        let binding = SessionBinding {
+            lease_id: [0x62; 16],
+            process_generation: 7,
+            listener_epoch: 1,
+            nk_handshake_hash: [0x63; 32],
+        };
+        let pbs = Arc::new(ProcessBootstrapSecret::generate().expect("bootstrap secret"));
+        let raw = Arc::new(SessionRaw {
+            writes: Mutex::new(Vec::new()),
+            cancels: AtomicUsize::new(0),
+            fail_reads: false,
+        });
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.lease_id = binding.lease_id;
+            lease.generation = binding.process_generation;
+            lease.epoch = binding.listener_epoch;
+            lease.nk_hash = binding.nk_handshake_hash;
+            lease.pbs = Some(Arc::clone(&pbs));
+            lease.connector = Some(Arc::new(OneSessionConnector(Mutex::new(Some(
+                Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            )))));
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.references.insert(
+                token,
+                Reference {
+                    state: RefState::Minted,
+                    issued: base,
+                    expires: deadline,
+                    session_slot: None,
+                    session_id: None,
+                },
+            );
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let error = broker
+            .handle(ControlRequest::OpenSession(Request {
+                request_id: [0x64; 16],
+                deadline_unix_ms: deadline,
+                body: crate::OpenSessionBody {
+                    target_token: token,
+                    session_id: None,
+                    required_capabilities: Vec::new(),
+                    session_open_request: Some(b"open".to_vec()),
+                    session_open_request_sha256: Some(Sha256::digest(b"open").into()),
+                },
+            }))
+            .expect_err("missing first M1 must fail session open");
+
+        assert_eq!(error.stage, ErrorStage::SessionOpen);
+        assert_eq!(error.close_reason, CloseReason::PeerClosed);
+        assert_eq!(error.message, INTERNAL_TARGET_NO_SESSION_FRAMES);
+        assert_eq!(raw.cancels.load(Ordering::SeqCst), 1);
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn terminal_after_raw_session_error_keeps_baseline_terminal_cleanup() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::clone(&cleanup_calls))));
+        let base = now().expect("system clock");
+        let terminal = base + LEASE_IDLE_MS;
+        let token = [0x65; 32];
+        let binding = SessionBinding {
+            lease_id: [0x66; 16],
+            process_generation: 7,
+            listener_epoch: 1,
+            nk_handshake_hash: [0x67; 32],
+        };
+        let pbs = Arc::new(ProcessBootstrapSecret::generate().expect("bootstrap secret"));
+        let raw = Arc::new(ClockAdvancingReadFailureRaw {
+            cancels: AtomicUsize::new(0),
+            clock: Arc::clone(&clock),
+            advance_to: terminal,
+        });
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.lease_id = binding.lease_id;
+            lease.generation = binding.process_generation;
+            lease.epoch = binding.listener_epoch;
+            lease.nk_hash = binding.nk_handshake_hash;
+            lease.pbs = Some(Arc::clone(&pbs));
+            lease.connector = Some(Arc::new(OneSessionConnector(Mutex::new(Some(
+                Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            )))));
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.references.insert(
+                token,
+                Reference {
+                    state: RefState::Minted,
+                    issued: base,
+                    expires: terminal + 1,
+                    session_slot: None,
+                    session_id: None,
+                },
+            );
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let error = broker
+            .handle(ControlRequest::OpenSession(Request {
+                request_id: [0x68; 16],
+                deadline_unix_ms: terminal + 1,
+                body: crate::OpenSessionBody {
+                    target_token: token,
+                    session_id: None,
+                    required_capabilities: Vec::new(),
+                    session_open_request: Some(b"open".to_vec()),
+                    session_open_request_sha256: Some(Sha256::digest(b"open").into()),
+                },
+            }))
+            .expect_err("completed-time terminal state must win over raw session failure");
+
+        assert_eq!(error.stage, ErrorStage::SessionOpen);
+        assert_eq!(error.close_reason, CloseReason::Stale);
+        assert_eq!(error.message, "Target session expired");
+        assert_ne!(error.message, INTERNAL_TARGET_NO_SESSION_FRAMES);
+        assert_eq!(raw.cancels.load(Ordering::SeqCst), 1);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        assert!(
+            broker
+                .inner
+                .lock()
+                .expect("test core")
+                .leases
+                .iter()
+                .all(Option::is_none)
+        );
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn terminal_after_raw_session_open_marks_before_session_commit() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::clone(&cleanup_calls))));
+        let base = now().expect("system clock");
+        let terminal = base + LEASE_IDLE_MS;
+        let token = [0x71; 32];
+        let binding = SessionBinding {
+            lease_id: [0x72; 16],
+            process_generation: 7,
+            listener_epoch: 1,
+            nk_handshake_hash: [0x73; 32],
+        };
+        let pbs = Arc::new(ProcessBootstrapSecret::generate().expect("bootstrap secret"));
+        let raw = Arc::new(ClockAdvancingSessionRaw::new(
+            binding.clone(),
+            pbs.as_ref(),
+            Arc::clone(&clock),
+            terminal,
+        ));
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.lease_id = binding.lease_id;
+            lease.generation = binding.process_generation;
+            lease.epoch = binding.listener_epoch;
+            lease.nk_hash = binding.nk_handshake_hash;
+            lease.pbs = Some(Arc::clone(&pbs));
+            lease.connector = Some(Arc::new(OneSessionConnector(Mutex::new(Some(
+                Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            )))));
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.references.insert(
+                token,
+                Reference {
+                    state: RefState::Minted,
+                    issued: base,
+                    expires: terminal + 1,
+                    session_slot: None,
+                    session_id: None,
+                },
+            );
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let error = broker
+            .handle(ControlRequest::OpenSession(Request {
+                request_id: [0x74; 16],
+                deadline_unix_ms: terminal + 1,
+                body: crate::OpenSessionBody {
+                    target_token: token,
+                    session_id: None,
+                    required_capabilities: Vec::new(),
+                    session_open_request: Some(b"open".to_vec()),
+                    session_open_request_sha256: Some(Sha256::digest(b"open").into()),
+                },
+            }))
+            .expect_err("terminal lease must win before session record commit");
+
+        assert_eq!(error.stage, ErrorStage::SessionOpen);
+        assert_eq!(error.close_reason, CloseReason::Stale);
+        assert_eq!(error.message, INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT);
+        assert_eq!(raw.cancels.load(Ordering::SeqCst), 1);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        assert!(
+            broker
+                .inner
+                .lock()
+                .expect("test core")
+                .leases
+                .iter()
+                .all(Option::is_none)
         );
     }
 

@@ -109,6 +109,13 @@ pub(crate) enum BootstrapFailureOrigin {
     AckBindingMismatch,
 }
 
+#[cfg(feature = "internal-diagnostics")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SessionFailureOrigin {
+    TargetNoSessionFrames,
+    LeaseTerminalBeforeSessionCommit,
+}
+
 /// All terminal information this layer is allowed to pass to its caller.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TransportFailure {
@@ -117,6 +124,8 @@ pub(crate) struct TransportFailure {
     pub(crate) cleanup_failed: bool,
     #[cfg(feature = "internal-diagnostics")]
     pub(crate) bootstrap_origin: Option<BootstrapFailureOrigin>,
+    #[cfg(feature = "internal-diagnostics")]
+    pub(crate) session_origin: Option<SessionFailureOrigin>,
 }
 
 impl TransportFailure {
@@ -127,6 +136,8 @@ impl TransportFailure {
             cleanup_failed: false,
             #[cfg(feature = "internal-diagnostics")]
             bootstrap_origin: None,
+            #[cfg(feature = "internal-diagnostics")]
+            session_origin: None,
         }
     }
 
@@ -137,6 +148,8 @@ impl TransportFailure {
             cleanup_failed: true,
             #[cfg(feature = "internal-diagnostics")]
             bootstrap_origin: None,
+            #[cfg(feature = "internal-diagnostics")]
+            session_origin: None,
         }
     }
 
@@ -159,6 +172,12 @@ impl TransportFailure {
     #[cfg(feature = "internal-diagnostics")]
     const fn with_bootstrap_origin(mut self, origin: BootstrapFailureOrigin) -> Self {
         self.bootstrap_origin = Some(origin);
+        self
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    const fn with_session_origin(mut self, origin: SessionFailureOrigin) -> Self {
+        self.session_origin = Some(origin);
         self
     }
 }
@@ -524,7 +543,16 @@ pub(crate) fn open_session(
         let mut reader = RawFrameReader::new();
         let handshake_deadline =
             phase_deadline(overall_deadline, now_unix_ms()?, SESSION_HANDSHAKE_MS)?;
-        let m1 = reader.read_outer(raw.as_ref(), handshake_deadline)?;
+        let m1 = reader
+            .read_outer(raw.as_ref(), handshake_deadline)
+            .map_err(|failure| {
+                #[cfg(feature = "internal-diagnostics")]
+                {
+                    failure.with_session_origin(SessionFailureOrigin::TargetNoSessionFrames)
+                }
+                #[cfg(not(feature = "internal-diagnostics"))]
+                failure
+            })?;
         let mut session = BrokerSession::new(binding, pbs)
             .map_err(|error| c1_failure_after_close(raw.as_ref(), error, handshake_deadline))?;
         let m2 = session
@@ -1535,6 +1563,28 @@ mod tests {
         };
         assert_eq!(failure.close_reason, CloseReason::Timeout);
         assert_eq!(connector.connections.load(Ordering::Relaxed), 0);
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn first_read_outer_without_complete_m1_marks_only_target_no_session_frames() {
+        let pbs = ProcessBootstrapSecret::new([0x51; 32]);
+        let missing = match open_session(
+            &QueueConnector::new([Arc::new(ScriptedRaw::new([vec![0]])) as Arc<dyn RawDuplex>]),
+            Cancellation::new(),
+            session_binding(),
+            &pbs,
+            b"open",
+            deadline(),
+        ) {
+            Ok(_) => panic!("an incomplete target M1 must fail"),
+            Err(failure) => failure,
+        };
+        assert_eq!(missing.close_reason, CloseReason::Malformed);
+        assert_eq!(
+            missing.session_origin,
+            Some(SessionFailureOrigin::TargetNoSessionFrames)
+        );
     }
 
     fn platform_ok<T>(result: Result<T, PlatformFailure>) -> T {

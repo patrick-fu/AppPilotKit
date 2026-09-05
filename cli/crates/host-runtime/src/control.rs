@@ -18,6 +18,11 @@ const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 pub(crate) const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
 #[cfg(feature = "internal-diagnostics")]
 pub(crate) const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_frames";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str =
+    "lease_terminal_before_session_commit";
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct ReadyReference([u8; 32]);
@@ -850,6 +855,12 @@ fn decode_failure_body(decoder: &mut Decoder<'_>) -> Result<ControlFailure, Cont
         INTERNAL_BOOTSTRAP_ADAPTER_REJECTED => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
         #[cfg(feature = "internal-diagnostics")]
         INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_TARGET_NO_SESSION_FRAMES => INTERNAL_TARGET_NO_SESSION_FRAMES,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT => {
+            INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT
+        }
         _ if !message.is_empty()
             && message.len() <= 256
             && !message

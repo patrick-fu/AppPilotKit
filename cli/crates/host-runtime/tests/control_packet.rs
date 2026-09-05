@@ -139,10 +139,12 @@ fn stock_bootstrap_failure_packet_is_byte_exact() {
 
 #[cfg(feature = "internal-diagnostics")]
 #[test]
-fn diagnostic_bootstrap_markers_are_the_only_extra_stock_messages() {
+fn diagnostic_markers_are_the_only_extra_stock_messages() {
     for marker in [
         "bootstrap_adapter_rejected",
         "bootstrap_ack_binding_mismatch",
+        "target_no_session_frames",
+        "lease_terminal_before_session_commit",
     ] {
         let failure = ControlFailure {
             kind: ErrorKind::SessionExpired,
@@ -165,10 +167,12 @@ fn diagnostic_bootstrap_markers_are_the_only_extra_stock_messages() {
 
 #[cfg(not(feature = "internal-diagnostics"))]
 #[test]
-fn diagnostic_bootstrap_markers_are_not_stock_messages_by_default() {
+fn diagnostic_markers_are_not_stock_messages_by_default() {
     for marker in [
         "bootstrap_adapter_rejected",
         "bootstrap_ack_binding_mismatch",
+        "target_no_session_frames",
+        "lease_terminal_before_session_commit",
     ] {
         let failure = ControlFailure {
             kind: ErrorKind::SessionExpired,
