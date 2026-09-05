@@ -548,8 +548,7 @@ pub(crate) fn open_session(
             .map_err(|failure| {
                 #[cfg(feature = "internal-diagnostics")]
                 {
-                    return failure
-                        .with_session_origin(SessionFailureOrigin::TargetNoSessionFrames);
+                    failure.with_session_origin(SessionFailureOrigin::TargetNoSessionFrames)
                 }
                 #[cfg(not(feature = "internal-diagnostics"))]
                 failure
