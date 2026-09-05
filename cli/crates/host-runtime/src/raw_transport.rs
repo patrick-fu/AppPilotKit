@@ -107,6 +107,10 @@ fn platform_failure(failure: PlatformFailure) -> TransportFailure {
 pub(crate) enum BootstrapFailureOrigin {
     AdapterRejected,
     AckBindingMismatch,
+    BootstrapIoTimeout,
+    PrepareLaunchTimeout,
+    PrepareWaitTimeout,
+    BootstrapCommitTimeout,
 }
 
 #[cfg(feature = "internal-diagnostics")]
@@ -170,7 +174,7 @@ impl TransportFailure {
     }
 
     #[cfg(feature = "internal-diagnostics")]
-    const fn with_bootstrap_origin(mut self, origin: BootstrapFailureOrigin) -> Self {
+    pub(crate) const fn with_bootstrap_origin(mut self, origin: BootstrapFailureOrigin) -> Self {
         self.bootstrap_origin = Some(origin);
         self
     }
@@ -708,6 +712,12 @@ pub(crate) fn bootstrap(
             reader,
         }),
         Err(failure) => {
+            #[cfg(feature = "internal-diagnostics")]
+            let failure = if failure.close_reason == CloseReason::Timeout {
+                failure.with_bootstrap_origin(BootstrapFailureOrigin::BootstrapIoTimeout)
+            } else {
+                failure
+            };
             bootstrap.cancel();
             let cancellation = Cancellation::new();
             let cleanup_deadline = cleanup_deadline();

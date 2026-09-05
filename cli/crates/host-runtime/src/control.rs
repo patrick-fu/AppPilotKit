@@ -19,6 +19,14 @@ pub(crate) const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_
 #[cfg(feature = "internal-diagnostics")]
 pub(crate) const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
 #[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_PREPARE_LAUNCH_TIMEOUT: &str = "prepare_launch_timeout";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_BOOTSTRAP_IO_TIMEOUT: &str = "bootstrap_io_timeout";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_PREPARE_WAIT_TIMEOUT: &str = "prepare_wait_timeout";
+#[cfg(feature = "internal-diagnostics")]
+pub(crate) const INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT: &str = "bootstrap_commit_timeout";
+#[cfg(feature = "internal-diagnostics")]
 pub(crate) const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_frames";
 #[cfg(feature = "internal-diagnostics")]
 pub(crate) const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str =
@@ -861,6 +869,14 @@ fn decode_failure_body(decoder: &mut Decoder<'_>) -> Result<ControlFailure, Cont
         INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT => {
             INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT
         }
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_PREPARE_LAUNCH_TIMEOUT => INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_BOOTSTRAP_IO_TIMEOUT => INTERNAL_BOOTSTRAP_IO_TIMEOUT,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_PREPARE_WAIT_TIMEOUT => INTERNAL_PREPARE_WAIT_TIMEOUT,
+        #[cfg(feature = "internal-diagnostics")]
+        INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT => INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
         _ if !message.is_empty()
             && message.len() <= 256
             && !message

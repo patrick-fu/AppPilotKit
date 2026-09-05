@@ -11,7 +11,9 @@ use crate::{
 #[cfg(feature = "internal-diagnostics")]
 use crate::{
     INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH, INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
-    INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT, INTERNAL_TARGET_NO_SESSION_FRAMES,
+    INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT, INTERNAL_BOOTSTRAP_IO_TIMEOUT,
+    INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT, INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+    INTERNAL_PREPARE_WAIT_TIMEOUT, INTERNAL_TARGET_NO_SESSION_FRAMES,
     raw_transport::{BootstrapFailureOrigin, SessionFailureOrigin},
 };
 use apppilotkit_transport_crypto_core::{
@@ -846,7 +848,16 @@ impl SessionBroker {
         std::thread::spawn(move || {
             let result = pending
                 .launch(descriptor, worker_cancel, launch_deadline)
-                .map_err(platform_launch_failure)
+                .map_err(|failure| {
+                    #[cfg(feature = "internal-diagnostics")]
+                    let timed_out = failure.primary_kind() == PlatformFailureKind::TimedOut;
+                    let failure = platform_launch_failure(failure);
+                    #[cfg(feature = "internal-diagnostics")]
+                    if timed_out {
+                        return failure.with_bootstrap_origin(BootstrapFailureOrigin::PrepareLaunchTimeout);
+                    }
+                    failure
+                })
                 .and_then(|launched| {
                     let (raw, connector, cleanup) = launched.into_parts();
                     let bootstrap_deadline = worker_clock
@@ -890,7 +901,14 @@ impl SessionBroker {
             Some(Err(error)) => self.reject_transport(completion, error),
             None => {
                 reservation.launch_cancel.cancel();
-                self.reject(completion, CloseReason::Timeout)
+                let failure = self.reject(completion, CloseReason::Timeout);
+                #[cfg(feature = "internal-diagnostics")]
+                return failure.map_err(|failure| mark_bootstrap_origin(
+                    failure,
+                    BootstrapFailureOrigin::PrepareWaitTimeout,
+                ));
+                #[cfg(not(feature = "internal-diagnostics"))]
+                failure
             }
         }
     }
@@ -2286,10 +2304,10 @@ fn transport_fail(stage: ErrorStage, error: TransportFailure) -> ControlFailure 
 
 #[cfg(feature = "internal-diagnostics")]
 fn commit_rejection_origin(reason: CloseReason) -> Option<BootstrapFailureOrigin> {
-    if reason == CloseReason::BindingMismatch {
-        Some(BootstrapFailureOrigin::AckBindingMismatch)
-    } else {
-        None
+    match reason {
+        CloseReason::BindingMismatch => Some(BootstrapFailureOrigin::AckBindingMismatch),
+        CloseReason::Timeout => Some(BootstrapFailureOrigin::BootstrapCommitTimeout),
+        _ => None,
     }
 }
 
@@ -2301,6 +2319,10 @@ fn mark_bootstrap_origin(
     failure.message = match origin {
         BootstrapFailureOrigin::AdapterRejected => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
         BootstrapFailureOrigin::AckBindingMismatch => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+        BootstrapFailureOrigin::BootstrapIoTimeout => INTERNAL_BOOTSTRAP_IO_TIMEOUT,
+        BootstrapFailureOrigin::PrepareLaunchTimeout => INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+        BootstrapFailureOrigin::PrepareWaitTimeout => INTERNAL_PREPARE_WAIT_TIMEOUT,
+        BootstrapFailureOrigin::BootstrapCommitTimeout => INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
     };
     failure
 }
@@ -2374,7 +2396,10 @@ mod platform_launch_failure_tests {
             commit_rejection_origin(CloseReason::BindingMismatch),
             Some(BootstrapFailureOrigin::AckBindingMismatch)
         );
-        assert_eq!(commit_rejection_origin(CloseReason::Timeout), None);
+        assert_eq!(
+            commit_rejection_origin(CloseReason::Timeout),
+            Some(BootstrapFailureOrigin::BootstrapCommitTimeout)
+        );
     }
 }
 

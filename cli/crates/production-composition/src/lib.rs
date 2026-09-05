@@ -24,6 +24,14 @@ const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
 #[cfg(feature = "internal-diagnostics")]
+const INTERNAL_PREPARE_LAUNCH_TIMEOUT: &str = "prepare_launch_timeout";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_BOOTSTRAP_IO_TIMEOUT: &str = "bootstrap_io_timeout";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_PREPARE_WAIT_TIMEOUT: &str = "prepare_wait_timeout";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT: &str = "bootstrap_commit_timeout";
+#[cfg(feature = "internal-diagnostics")]
 const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_frames";
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str = "lease_terminal_before_session_commit";
@@ -55,7 +63,9 @@ mod internal_diagnostics {
     use super::{
         CloseReason, ControlFailure, File, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
         INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
-        INTERNAL_TARGET_NO_SESSION_FRAMES, Mutex, Value, Write,
+        INTERNAL_TARGET_NO_SESSION_FRAMES, INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+        INTERNAL_BOOTSTRAP_IO_TIMEOUT, INTERNAL_PREPARE_WAIT_TIMEOUT, INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
+        Mutex, Value, Write,
     };
     use apppilotkit_host_runtime::ErrorStage;
     use std::{
@@ -115,6 +125,14 @@ mod internal_diagnostics {
                 "target_no_session_frames"
             } else if failure.message == INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT {
                 "lease_terminal_before_session_commit"
+            } else if failure.message == INTERNAL_PREPARE_LAUNCH_TIMEOUT {
+                "prepare_launch_timeout"
+            } else if failure.message == INTERNAL_BOOTSTRAP_IO_TIMEOUT {
+                "bootstrap_io_timeout"
+            } else if failure.message == INTERNAL_PREPARE_WAIT_TIMEOUT {
+                "prepare_wait_timeout"
+            } else if failure.message == INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT {
+                "bootstrap_commit_timeout"
             } else {
                 match (failure.stage, failure.close_reason) {
                     // The private control result does not preserve which Prepare
@@ -212,8 +230,16 @@ fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
             | INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
             | INTERNAL_TARGET_NO_SESSION_FRAMES
             | INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT
+            | INTERNAL_PREPARE_LAUNCH_TIMEOUT
+            | INTERNAL_BOOTSTRAP_IO_TIMEOUT
+            | INTERNAL_PREPARE_WAIT_TIMEOUT
+            | INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT
     ) {
-        "Target session expired"
+        if failure.close_reason == CloseReason::Timeout {
+            "Broker operation timed out"
+        } else {
+            "Target session expired"
+        }
     } else {
         failure.message
     }
@@ -1343,6 +1369,10 @@ mod tests {
             INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
             INTERNAL_TARGET_NO_SESSION_FRAMES,
             INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
+            INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+            INTERNAL_BOOTSTRAP_IO_TIMEOUT,
+            INTERNAL_PREPARE_WAIT_TIMEOUT,
+            INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
         ] {
             let marked = ControlFailure {
                 message: marker,
@@ -1369,6 +1399,33 @@ mod tests {
             let diagnostic = internal_diagnostics::diagnostic_value(&error);
             assert_eq!(diagnostic["reason_code"], marker);
             assert_eq!(diagnostic.as_object().map(|value| value.len()), Some(3));
+        }
+
+        let timeout = ControlFailure {
+            close_reason: CloseReason::Timeout,
+            kind: ErrorKind::Timeout,
+            message: "Broker operation timed out",
+            ..normal
+        };
+        let expected = serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(
+            timeout.clone(),
+        )))
+        .expect("public timeout JSON");
+        for marker in [
+            INTERNAL_PREPARE_LAUNCH_TIMEOUT,
+            INTERNAL_BOOTSTRAP_IO_TIMEOUT,
+            INTERNAL_PREPARE_WAIT_TIMEOUT,
+            INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
+        ] {
+            assert_eq!(
+                serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(ControlFailure {
+                    message: marker,
+                    ..timeout.clone()
+                })))
+                .expect("marked public timeout JSON"),
+                expected,
+                "the timeout marker must not alter public CLI bytes"
+            );
         }
     }
 
