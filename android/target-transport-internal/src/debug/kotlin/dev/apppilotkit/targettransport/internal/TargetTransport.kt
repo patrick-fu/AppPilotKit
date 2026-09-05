@@ -75,6 +75,7 @@ class TargetTransport private constructor(
     private var stopped = false
     private var bootstrapStreamId = 0L
     private var composition: TargetRuntimeComposition? = null
+    private val pendingSessionAdmission = PendingSessionAdmission()
 
     companion object {
         const val DESCRIPTOR_EXTRA = "dev.apppilotkit.transport.DESCRIPTOR"
@@ -203,7 +204,7 @@ class TargetTransport private constructor(
             bootstrapStreamId = streamId
             driveAndProcess(SupervisorEvent(TransportAbi.EVENT_BOOTSTRAP_CONNECTED, streamId))
         } else if (composition == null) {
-            socketHost.close(streamId)
+            if (!pendingSessionAdmission.defer(streamId)) socketHost.close(streamId)
         } else {
             driveAndProcess(SupervisorEvent(TransportAbi.EVENT_SESSION_ACCEPTED, streamId))
         }
@@ -294,6 +295,9 @@ class TargetTransport private constructor(
             require(created.catalog.identity.generation == outcome.value0)
             composition = created
             socketHost.receive(outcome.streamId)
+            pendingSessionAdmission.takeWhenReady()?.let { streamId ->
+                driveAndProcess(SupervisorEvent(TransportAbi.EVENT_SESSION_ACCEPTED, streamId))
+            }
         } catch (_: Throwable) {
             internalFailure()
         }
@@ -326,6 +330,7 @@ class TargetTransport private constructor(
         runtimes.values.forEach { it.invalidateSessions() }
         runtimes.clear()
         composition = null
+        pendingSessionAdmission.clear()
         try {
             supervisor.close()
         } catch (_: Throwable) {
@@ -375,6 +380,23 @@ class TargetTransport private constructor(
     }
 
     private data class PendingWrite(val token: Long, val bytes: ByteArray)
+}
+
+internal class PendingSessionAdmission {
+    private var streamId: Long? = null
+
+    fun defer(streamId: Long): Boolean {
+        check(streamId > 0L)
+        if (this.streamId != null) return false
+        this.streamId = streamId
+        return true
+    }
+
+    fun takeWhenReady(): Long? = streamId.also { streamId = null }
+
+    fun clear() {
+        streamId = null
+    }
 }
 
 /** A debug Activity calls this once after the app's own frozen runtime composition is ready. */
