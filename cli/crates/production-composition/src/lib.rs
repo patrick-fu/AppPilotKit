@@ -23,6 +23,10 @@ use apppilotkit_host_runtime::{
 const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH: &str = "bootstrap_ack_binding_mismatch";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_frames";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str = "lease_terminal_before_session_commit";
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use signal_hook::{
@@ -50,7 +54,8 @@ use std::{
 mod internal_diagnostics {
     use super::{
         CloseReason, ControlFailure, File, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
-        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, Mutex, Value, Write,
+        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
+        INTERNAL_TARGET_NO_SESSION_FRAMES, Mutex, Value, Write,
     };
     use apppilotkit_host_runtime::ErrorStage;
     use std::{
@@ -106,6 +111,10 @@ mod internal_diagnostics {
                 && failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
             {
                 "bootstrap_ack_binding_mismatch"
+            } else if failure.message == INTERNAL_TARGET_NO_SESSION_FRAMES {
+                "target_no_session_frames"
+            } else if failure.message == INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT {
+                "lease_terminal_before_session_commit"
             } else {
                 match (failure.stage, failure.close_reason) {
                     // The private control result does not preserve which Prepare
@@ -159,7 +168,7 @@ mod internal_diagnostics {
         .as_ref()
     }
 
-    pub(super) fn record_prepare_failure(failure: &ControlFailure) {
+    pub(super) fn record_failure(failure: &ControlFailure) {
         let Some(sink) = sink() else { return };
         let Ok(mut sink) = sink.lock() else { return };
         let _ = write_diagnostic(&mut *sink, PrepareFailureDiagnostic::from_failure(failure));
@@ -188,20 +197,22 @@ mod internal_diagnostics {
 }
 
 #[cfg(feature = "internal-diagnostics")]
-fn record_prepare_failure(failure: &ControlFailure) {
-    internal_diagnostics::record_prepare_failure(failure);
+fn record_failure(failure: &ControlFailure) {
+    internal_diagnostics::record_failure(failure);
 }
 
 #[cfg(not(feature = "internal-diagnostics"))]
-fn record_prepare_failure(_: &ControlFailure) {}
+fn record_failure(_: &ControlFailure) {}
 
 #[cfg(feature = "internal-diagnostics")]
 fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
-    if failure.stage == apppilotkit_host_runtime::ErrorStage::Bootstrap
-        && failure.close_reason == CloseReason::BindingMismatch
-        && (failure.message == INTERNAL_BOOTSTRAP_ADAPTER_REJECTED
-            || failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH)
-    {
+    if matches!(
+        failure.message,
+        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED
+            | INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
+            | INTERNAL_TARGET_NO_SESSION_FRAMES
+            | INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT
+    ) {
         "Target session expired"
     } else {
         failure.message
@@ -820,7 +831,10 @@ impl BrokerCatalogRuntime {
                 opened
             }
             Ok(_) => return Err(CatalogSelectError::SessionExpired),
-            Err(error) => return Err(select_error(error)),
+            Err(error) => {
+                record_failure(&error);
+                return Err(select_error(error));
+            }
         };
         if opened.response_sha256 != <[u8; 32]>::from(Sha256::digest(&opened.response)) {
             return Err(CatalogSelectError::SessionExpired);
@@ -1179,7 +1193,7 @@ pub fn stage_install(prefix: &Path, built_bin_dir: &Path) -> io::Result<[PathBuf
 
 pub fn render_prepare_error(error: &PrepareError) -> Value {
     if let PrepareError::Broker(failure) = error {
-        record_prepare_failure(failure);
+        record_failure(failure);
     }
     let (kind, message, stage) = match error {
         PrepareError::InvalidInvocation => (
@@ -1312,7 +1326,7 @@ mod tests {
 
     #[cfg(feature = "internal-diagnostics")]
     #[test]
-    fn bootstrap_markers_survive_private_cbor_but_leave_public_prepare_json_unchanged() {
+    fn private_markers_survive_private_cbor_but_leave_public_prepare_json_unchanged() {
         let normal = ControlFailure {
             kind: ErrorKind::SessionExpired,
             message: "Target session expired",
@@ -1327,6 +1341,8 @@ mod tests {
         for marker in [
             INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
             INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+            INTERNAL_TARGET_NO_SESSION_FRAMES,
+            INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
         ] {
             let marked = ControlFailure {
                 message: marker,
@@ -1340,6 +1356,10 @@ mod tests {
             };
             assert_eq!(request_id, [0x52; 16]);
             assert_eq!(error.message, marker);
+            assert!(matches!(
+                select_error(error.clone()),
+                CatalogSelectError::SessionExpired
+            ));
             assert_eq!(
                 serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(error.clone())))
                     .expect("marked public prepare JSON"),
