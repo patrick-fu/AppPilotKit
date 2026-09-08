@@ -978,12 +978,23 @@ fn map_list(
                     cursor,
                     "--output".to_owned(),
                     "json".to_owned(),
+                    "--non-interactive".to_owned(),
                 ],
                 side_effect: SideEffect::ReadOnly,
                 retry_safety: RetrySafety::Safe,
                 preconditions: vec!["session is still valid"],
                 reason: "Continue the truncated Semantic Catalog list",
             },
+        );
+    } else if items.is_empty() {
+        next_actions.push(list_selector_action(executable, session));
+    } else {
+        next_actions.extend(
+            items
+                .iter()
+                .take(32)
+                .map(|item| show_list_item_action(executable, session, item))
+                .collect::<Result<Vec<_>, _>>()?,
         );
     }
     let count = items.len();
@@ -1345,6 +1356,62 @@ fn inspect_actions(
         });
     }
     actions
+}
+
+fn list_selector_action(executable: &str, session: &OpenedProtocolSession) -> NextAction {
+    NextAction {
+        id: "catalog.list",
+        argv: vec![
+            executable.to_owned(),
+            "catalog".to_owned(),
+            "list".to_owned(),
+            argv_value("--session", &session.session_id),
+            argv_value("--target", &session.target_id),
+            "--output".to_owned(),
+            "json".to_owned(),
+            "--non-interactive".to_owned(),
+        ],
+        side_effect: SideEffect::ReadOnly,
+        retry_safety: RetrySafety::Safe,
+        preconditions: vec!["session is still valid"],
+        reason: "Inspect the current Semantic Catalog without replaying a mutation",
+    }
+}
+
+fn show_list_item_action(
+    executable: &str,
+    session: &OpenedProtocolSession,
+    item: &Value,
+) -> Result<NextAction, LocalFailure> {
+    let capability = item
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(internal_error)?;
+    let declaration_revision = item
+        .get("declaration_revision")
+        .and_then(Value::as_u64)
+        .ok_or_else(internal_error)?;
+    Ok(NextAction {
+        id: "catalog.show",
+        argv: vec![
+            executable.to_owned(),
+            "catalog".to_owned(),
+            "show".to_owned(),
+            "--capability".to_owned(),
+            capability.to_owned(),
+            "--declaration-revision".to_owned(),
+            declaration_revision.to_string(),
+            argv_value("--session", &session.session_id),
+            argv_value("--target", &session.target_id),
+            "--output".to_owned(),
+            "json".to_owned(),
+            "--non-interactive".to_owned(),
+        ],
+        side_effect: SideEffect::ReadOnly,
+        retry_safety: RetrySafety::Safe,
+        preconditions: vec!["session is still valid"],
+        reason: "Inspect the first Semantic Capability using the same Target-issued Session",
+    })
 }
 
 fn select_error(executable: &str, error: CatalogSelectError) -> LocalFailure {

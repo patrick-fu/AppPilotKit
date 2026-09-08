@@ -22,6 +22,57 @@ pub enum PlatformFailureKind {
     Internal,
 }
 
+/// Closed, non-sensitive Apple Simulator launch rejection provenance for
+/// Debug/Internal diagnostics only.
+#[cfg(feature = "internal-diagnostics")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AppleSimulatorRejectedOrigin {
+    InvalidSelection,
+    TargetAlreadyReserved,
+    DescriptorOversize,
+    ArtifactPreparation,
+    ToolOutput,
+    CandidateVerification,
+    LaunchResult,
+    LaunchPid,
+    OwnerProof,
+    PostLaunchArtifact,
+}
+
+#[cfg(feature = "internal-diagnostics")]
+impl AppleSimulatorRejectedOrigin {
+    pub const fn reason_code(self) -> &'static str {
+        match self {
+            Self::InvalidSelection => "apple_selection_invalid",
+            Self::TargetAlreadyReserved => "apple_target_already_reserved",
+            Self::DescriptorOversize => "apple_descriptor_oversize",
+            Self::ArtifactPreparation => "apple_artifact_preparation_rejected",
+            Self::ToolOutput => "apple_tool_output_rejected",
+            Self::CandidateVerification => "apple_candidate_verification_rejected",
+            Self::LaunchResult => "apple_launch_result_rejected",
+            Self::LaunchPid => "apple_launch_pid_rejected",
+            Self::OwnerProof => "apple_owner_proof_rejected",
+            Self::PostLaunchArtifact => "apple_post_launch_artifact_rejected",
+        }
+    }
+
+    pub fn from_reason_code(reason_code: &str) -> Option<Self> {
+        match reason_code {
+            "apple_selection_invalid" => Some(Self::InvalidSelection),
+            "apple_target_already_reserved" => Some(Self::TargetAlreadyReserved),
+            "apple_descriptor_oversize" => Some(Self::DescriptorOversize),
+            "apple_artifact_preparation_rejected" => Some(Self::ArtifactPreparation),
+            "apple_tool_output_rejected" => Some(Self::ToolOutput),
+            "apple_candidate_verification_rejected" => Some(Self::CandidateVerification),
+            "apple_launch_result_rejected" => Some(Self::LaunchResult),
+            "apple_launch_pid_rejected" => Some(Self::LaunchPid),
+            "apple_owner_proof_rejected" => Some(Self::OwnerProof),
+            "apple_post_launch_artifact_rejected" => Some(Self::PostLaunchArtifact),
+            _ => None,
+        }
+    }
+}
+
 /// Opaque, secret-free platform-side failure.
 ///
 /// This carrier intentionally implements neither `Debug` nor `Display`: callers
@@ -30,6 +81,8 @@ pub enum PlatformFailureKind {
 pub struct PlatformFailure {
     kind: PlatformFailureKind,
     primary_kind: PlatformFailureKind,
+    #[cfg(feature = "internal-diagnostics")]
+    apple_simulator_rejection_origin: Option<AppleSimulatorRejectedOrigin>,
 }
 
 impl PlatformFailure {
@@ -37,6 +90,8 @@ impl PlatformFailure {
         Self {
             kind,
             primary_kind: kind,
+            #[cfg(feature = "internal-diagnostics")]
+            apple_simulator_rejection_origin: None,
         }
     }
 
@@ -46,7 +101,27 @@ impl PlatformFailure {
         Self {
             kind: PlatformFailureKind::CleanupFailed,
             primary_kind,
+            #[cfg(feature = "internal-diagnostics")]
+            apple_simulator_rejection_origin: None,
         }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    pub const fn apple_simulator_rejected(origin: AppleSimulatorRejectedOrigin) -> Self {
+        Self {
+            kind: PlatformFailureKind::Rejected,
+            primary_kind: PlatformFailureKind::Rejected,
+            apple_simulator_rejection_origin: Some(origin),
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    pub const fn with_apple_simulator_rejection_origin(
+        mut self,
+        origin: AppleSimulatorRejectedOrigin,
+    ) -> Self {
+        self.apple_simulator_rejection_origin = Some(origin);
+        self
     }
 
     pub const fn kind(self) -> PlatformFailureKind {
@@ -59,6 +134,11 @@ impl PlatformFailure {
 
     pub const fn cleanup_failed(self) -> bool {
         matches!(self.kind, PlatformFailureKind::CleanupFailed)
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    pub const fn apple_simulator_rejection_origin(self) -> Option<AppleSimulatorRejectedOrigin> {
+        self.apple_simulator_rejection_origin
     }
 }
 
@@ -351,6 +431,66 @@ mod tests {
         assert_eq!(failure.kind(), PlatformFailureKind::CleanupFailed);
         assert_eq!(failure.primary_kind(), PlatformFailureKind::TimedOut);
         assert!(failure.cleanup_failed());
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn apple_simulator_rejection_origins_are_closed_and_preserved() {
+        let cases = [
+            (
+                AppleSimulatorRejectedOrigin::InvalidSelection,
+                "apple_selection_invalid",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::TargetAlreadyReserved,
+                "apple_target_already_reserved",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::DescriptorOversize,
+                "apple_descriptor_oversize",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::ArtifactPreparation,
+                "apple_artifact_preparation_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::ToolOutput,
+                "apple_tool_output_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::CandidateVerification,
+                "apple_candidate_verification_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::LaunchResult,
+                "apple_launch_result_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::LaunchPid,
+                "apple_launch_pid_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::OwnerProof,
+                "apple_owner_proof_rejected",
+            ),
+            (
+                AppleSimulatorRejectedOrigin::PostLaunchArtifact,
+                "apple_post_launch_artifact_rejected",
+            ),
+        ];
+        for (origin, reason_code) in cases {
+            let failure = PlatformFailure::apple_simulator_rejected(origin);
+            assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
+            assert_eq!(failure.primary_kind(), PlatformFailureKind::Rejected);
+            assert_eq!(failure.apple_simulator_rejection_origin(), Some(origin));
+            assert_eq!(origin.reason_code(), reason_code);
+            assert_eq!(
+                AppleSimulatorRejectedOrigin::from_reason_code(reason_code),
+                Some(origin)
+            );
+            assert!(reason_code.starts_with("apple_"));
+            assert!(!reason_code.contains(['/', '\\', '\n', '\r', '\0']));
+        }
     }
 
     struct AbortProbe {

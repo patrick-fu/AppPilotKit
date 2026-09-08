@@ -1748,17 +1748,15 @@ mod tests {
             &[],
         );
         let broker_finished = broker.write_finished().expect("Broker Finished");
-        assert_eq!(
-            drive_ffi(handle, EVENT_STREAM_BYTES, 11, 0, &broker_finished).0,
-            STATUS_NEED_INPUT
-        );
-
         let open_frames = broker
             .write_session_open(b"opaque session.open")
             .expect("open");
-        let open_bytes = open_frames.into_iter().flatten().collect::<Vec<_>>();
+        let mut coalesced = broker_finished;
+        for frame in open_frames {
+            coalesced.extend_from_slice(&frame);
+        }
         let (_, application, application_bytes) =
-            drive_ffi(handle, EVENT_STREAM_BYTES, 11, 0, &open_bytes);
+            drive_ffi(handle, EVENT_STREAM_BYTES, 11, 0, &coalesced);
         assert_eq!(application.kind, OUTCOME_APPLICATION);
         assert_eq!(application_bytes, b"opaque session.open");
         let (_, response, response_bytes) =

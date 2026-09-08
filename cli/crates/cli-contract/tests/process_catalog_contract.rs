@@ -247,6 +247,173 @@ fn installed_process_projects_protocol_disclosure_without_renderer_panics() {
 }
 
 #[test]
+fn installed_process_projects_target_issued_list_guidance() {
+    let mut complete_session = semantic_session(2, true, 16 * 1024);
+    complete_session["max_page_items"] = serde_json::json!(64);
+    let capabilities = (0..33)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("resource.item{index:02}"),
+                "kind": "resource",
+                "declarationRevision": index + 1,
+            })
+        })
+        .collect::<Vec<_>>();
+    let (complete, complete_request) = run_with_target(
+        &["catalog", "list", "--output", "json"],
+        complete_session,
+        move |request| {
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "catalog": {"id": "catalog_12345678", "generation": 7},
+                        "capabilities": capabilities,
+                        "page": {
+                            "truncated": false,
+                            "returnedItems": 33,
+                            "appliedLimits": {"maxItems": 64, "maxBytes": 16384},
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+        },
+    );
+    assert_eq!(complete.status.code(), Some(0));
+    assert_eq!(complete_request.unwrap()["method"], "semantic.list");
+    let complete = machine_result(&complete);
+    assert_eq!(complete["status"], "succeeded");
+    assert_eq!(complete["side_effect"], "read_only");
+    assert_eq!(complete["retry_safety"], "safe");
+    assert_eq!(complete["next_actions"].as_array().unwrap().len(), 32);
+    for (index, action) in complete["next_actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(action["id"], "catalog.show");
+        assert_eq!(action["side_effect"], "read_only");
+        assert_eq!(action["retry_safety"], "safe");
+        assert_eq!(
+            action["argv"],
+            serde_json::json!([
+                FIXTURE_BINARY,
+                "catalog",
+                "show",
+                "--capability",
+                format!("resource.item{index:02}"),
+                "--declaration-revision",
+                (index + 1).to_string(),
+                format!("--session={SESSION}"),
+                "--target=target_demo",
+                "--output",
+                "json",
+                "--non-interactive",
+            ])
+        );
+    }
+
+    let (truncated, truncated_request) = run_with_target(
+        &["catalog", "list", "--output", "json"],
+        semantic_session(2, true, 16 * 1024),
+        |request| {
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "catalog": {"id": "catalog_12345678", "generation": 7},
+                        "capabilities": [
+                            {"id": "resource.current", "kind": "resource", "declarationRevision": 9}
+                        ],
+                        "page": {
+                            "truncated": true,
+                            "returnedItems": 1,
+                            "appliedLimits": {"maxItems": 2, "maxBytes": 4096},
+                            "reasons": ["maxItems"],
+                            "nextCursor": "cursor_resume_0001"
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+        },
+    );
+    assert_eq!(truncated.status.code(), Some(0));
+    assert_eq!(truncated_request.unwrap()["method"], "semantic.list");
+    let truncated = machine_result(&truncated);
+    assert_eq!(truncated["status"], "succeeded");
+    assert_eq!(truncated["next_actions"].as_array().unwrap().len(), 1);
+    assert_eq!(truncated["next_actions"][0]["id"], "catalog.list.continue");
+    assert_eq!(truncated["next_actions"][0]["side_effect"], "read_only");
+    assert_eq!(truncated["next_actions"][0]["retry_safety"], "safe");
+    assert_eq!(
+        truncated["next_actions"][0]["argv"],
+        serde_json::json!([
+            FIXTURE_BINARY,
+            "catalog",
+            "list",
+            format!("--session={SESSION}"),
+            "--target=target_demo",
+            "--cursor",
+            "cursor_resume_0001",
+            "--output",
+            "json",
+            "--non-interactive",
+        ])
+    );
+
+    let (empty, empty_request) = run_with_target(
+        &["catalog", "list", "--output", "json"],
+        semantic_session(2, true, 16 * 1024),
+        |request| {
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {
+                        "catalog": {"id": "catalog_12345678", "generation": 7},
+                        "capabilities": [],
+                        "page": {
+                            "truncated": false,
+                            "returnedItems": 0,
+                            "appliedLimits": {"maxItems": 2, "maxBytes": 4096},
+                        }
+                    }
+                }))
+                .unwrap(),
+            )
+        },
+    );
+    assert_eq!(empty.status.code(), Some(0));
+    assert_eq!(empty_request.unwrap()["method"], "semantic.list");
+    let empty = machine_result(&empty);
+    assert_eq!(empty["status"], "succeeded");
+    assert_eq!(empty["side_effect"], "read_only");
+    assert_eq!(empty["retry_safety"], "safe");
+    assert_eq!(empty["next_actions"].as_array().unwrap().len(), 1);
+    assert_eq!(empty["next_actions"][0]["id"], "catalog.list");
+    assert_eq!(empty["next_actions"][0]["side_effect"], "read_only");
+    assert_eq!(empty["next_actions"][0]["retry_safety"], "safe");
+    assert_eq!(
+        empty["next_actions"][0]["argv"],
+        serde_json::json!([
+            FIXTURE_BINARY,
+            "catalog",
+            "list",
+            format!("--session={SESSION}"),
+            "--target=target_demo",
+            "--output",
+            "json",
+            "--non-interactive",
+        ])
+    );
+}
+
+#[test]
 fn installed_process_rejects_action_only_error_for_read_method() {
     let (output, request) = run_with_target(
         &["catalog", "list", "--output", "json"],

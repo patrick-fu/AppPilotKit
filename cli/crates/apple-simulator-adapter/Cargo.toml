@@ -9,6 +9,9 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+[features]
+internal-diagnostics = ["apppilotkit-host-runtime/internal-diagnostics"]
+
 [dependencies]
 apppilotkit-host-runtime = { path = "../host-runtime" }
 base64 = "=0.22.1"

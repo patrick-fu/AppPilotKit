@@ -7,12 +7,14 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
 import android.os.SystemClock
+import android.util.Log
 import dev.apppilotkit.semantic.SemanticRegistry
 import dev.apppilotkit.semantic.TargetActionCoordinator
 import dev.apppilotkit.semantic.runtime.ProtocolRuntime
 import dev.apppilotkit.semantic.runtime.ProtocolRuntimeLimits
 import dev.apppilotkit.semantic.runtime.SemanticProtocolPolicy
 import java.io.Closeable
+import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -75,10 +78,61 @@ class TargetTransport private constructor(
     private var stopped = false
     private var bootstrapStreamId = 0L
     private var composition: TargetRuntimeComposition? = null
+    private var internalFailureDiagnosticLogged = false
+    private var leaseTerminalDiagnosticLogged = false
     private val pendingSessionAdmission = PendingSessionAdmission()
 
     companion object {
         const val DESCRIPTOR_EXTRA = "dev.apppilotkit.transport.DESCRIPTOR"
+        private const val TERMINAL_DIAGNOSTIC_TAG = "AppPilotKitTerminal"
+
+        private enum class InternalFailureOrigin(val wireName: String) {
+            LISTENER_START_EXCEPTION("listener_start_exception"),
+            LISTENER_FAILED("listener_failed"),
+            PEER_UNSUPPORTED("peer_unsupported"),
+            ACCEPTED_STREAM_INVALID("accepted_stream_invalid"),
+            SUPERVISOR_DRIVE_EXCEPTION("supervisor_drive_exception"),
+            OUTCOME_PROCESSING_EXCEPTION("outcome_processing_exception"),
+            OUTCOME_UNKNOWN("outcome_unknown"),
+            WRITE_OUTCOME_INVALID("write_outcome_invalid"),
+            APPLICATION_OUTCOME_INVALID("application_outcome_invalid"),
+            APPLICATION_RUNTIME_EXCEPTION("application_runtime_exception"),
+            LEASE_READY_OUTCOME_INVALID("lease_ready_outcome_invalid"),
+            LEASE_READY_COMPOSITION_EXCEPTION("lease_ready_composition_exception"),
+            INTERNAL_ERROR_DRIVE_EXCEPTION("internal_error_drive_exception"),
+        }
+
+        private fun terminalEventName(tag: Int): String = when (tag) {
+            TransportAbi.EVENT_BOOTSTRAP_CONNECTED -> "bootstrap_connected"
+            TransportAbi.EVENT_STREAM_BYTES -> "stream_bytes"
+            TransportAbi.EVENT_FULL_WRITE_COMMITTED -> "full_write_committed"
+            TransportAbi.EVENT_SESSION_ACCEPTED -> "session_accepted"
+            TransportAbi.EVENT_RUNTIME_RESPONSE -> "runtime_response"
+            TransportAbi.EVENT_STREAM_EOF -> "stream_eof"
+            TransportAbi.EVENT_STREAM_IO_FAILED -> "stream_io_failed"
+            TransportAbi.EVENT_TIMER_FIRED -> "timer_fired"
+            TransportAbi.EVENT_ELIGIBILITY_LOST -> "eligibility_lost"
+            TransportAbi.EVENT_INTERNAL_ERROR -> "internal_error"
+            else -> "unknown"
+        }
+
+        private fun closeReasonName(reason: Int): String = when (reason) {
+            0 -> "normal"
+            1 -> "authentication_failed"
+            2 -> "binding_mismatch"
+            3 -> "stale"
+            4 -> "timeout"
+            5 -> "oversize"
+            6 -> "malformed"
+            7 -> "sequence_violation"
+            8 -> "record_limit"
+            9 -> "peer_closed"
+            10 -> "broker_lost"
+            11 -> "eligibility_lost"
+            12 -> "cleanup_failed"
+            13 -> "internal_error"
+            else -> "unknown"
+        }
 
         /** The caller owns the non-secret descriptor Activity extra and the app composition factory. */
         @JvmStatic
@@ -158,7 +212,7 @@ class TargetTransport private constructor(
         try {
             socketHost.start(endpointName)
         } catch (failure: Throwable) {
-            internalFailure()
+            internalFailure(InternalFailureOrigin.LISTENER_START_EXCEPTION)
             throw TargetTransportException("Cannot bind Android localabstract listener", failure)
         }
     }
@@ -190,14 +244,15 @@ class TargetTransport private constructor(
                         ),
                     )
                 }
-                SocketEvent.ListenerFailed, SocketEvent.PeerUnsupported -> internalFailure()
+                SocketEvent.ListenerFailed -> internalFailure(InternalFailureOrigin.LISTENER_FAILED)
+                SocketEvent.PeerUnsupported -> internalFailure(InternalFailureOrigin.PEER_UNSUPPORTED)
             }
         }
     }
 
     private fun accepted(streamId: Long) {
         if (streamId <= 0L) {
-            internalFailure()
+            internalFailure(InternalFailureOrigin.ACCEPTED_STREAM_INVALID)
             return
         }
         if (bootstrapStreamId == 0L) {
@@ -215,13 +270,19 @@ class TargetTransport private constructor(
             event.bytes.fill(0)
             return
         }
-        try {
-            val outcome = supervisor.drive(event)
-            event.bytes.fill(0)
-            process(outcome, SystemClock.elapsedRealtime())
+        val outcome = try {
+            supervisor.drive(event)
         } catch (_: Throwable) {
             event.bytes.fill(0)
-            internalFailure()
+            internalFailure(InternalFailureOrigin.SUPERVISOR_DRIVE_EXCEPTION)
+            return
+        }
+        event.bytes.fill(0)
+        try {
+            recordLeaseTerminalDiagnostic(event.tag, outcome)
+            process(outcome, SystemClock.elapsedRealtime())
+        } catch (_: Throwable) {
+            internalFailure(InternalFailureOrigin.OUTCOME_PROCESSING_EXCEPTION)
         }
     }
 
@@ -232,13 +293,15 @@ class TargetTransport private constructor(
         }
         scheduleDeadline(outcome, observedAtMilliseconds)
         when (outcome.kind) {
-            TransportAbi.OUTCOME_NEED_INPUT -> if (outcome.streamId > 0L) socketHost.receive(outcome.streamId) else internalFailure()
+            // C1 uses stream_id=0 for a stale/cancelled timer no-op. It is a
+            // valid outcome, not a request to read from an invalid stream.
+            TransportAbi.OUTCOME_NEED_INPUT -> if (outcome.streamId > 0L) socketHost.receive(outcome.streamId)
             TransportAbi.OUTCOME_WRITE_FRAMES -> write(outcome)
             TransportAbi.OUTCOME_APPLICATION -> application(outcome)
             TransportAbi.OUTCOME_LEASE_READY -> leaseReady(outcome)
             TransportAbi.OUTCOME_SESSION_TERMINAL -> sessionTerminal(outcome.streamId)
             TransportAbi.OUTCOME_LEASE_TERMINAL, TransportAbi.OUTCOME_CLOSED -> leaseTerminal()
-            else -> internalFailure()
+            else -> internalFailure(InternalFailureOrigin.OUTCOME_UNKNOWN)
         }
     }
 
@@ -247,7 +310,7 @@ class TargetTransport private constructor(
         outcome.bytes = null
         if (outcome.streamId <= 0L || outcome.writeToken <= 0L || bytes == null || bytes.isEmpty() || pendingWrites.containsKey(outcome.streamId)) {
             bytes?.fill(0)
-            internalFailure()
+            internalFailure(InternalFailureOrigin.WRITE_OUTCOME_INVALID)
             return
         }
         val frameBytes = bytes
@@ -261,7 +324,7 @@ class TargetTransport private constructor(
         val currentComposition = composition
         if (outcome.streamId <= 0L || request == null || request.isEmpty() || currentComposition == null) {
             request?.fill(0)
-            internalFailure()
+            internalFailure(InternalFailureOrigin.APPLICATION_OUTCOME_INVALID)
             return
         }
         val applicationBytes = request
@@ -273,7 +336,7 @@ class TargetTransport private constructor(
             runtime.handle(applicationBytes)
         } catch (_: Throwable) {
             applicationBytes.fill(0)
-            internalFailure()
+            internalFailure(InternalFailureOrigin.APPLICATION_RUNTIME_EXCEPTION)
             return
         }
         applicationBytes.fill(0)
@@ -287,7 +350,7 @@ class TargetTransport private constructor(
 
     private fun leaseReady(outcome: SupervisorOutcome) {
         if (outcome.streamId != bootstrapStreamId || outcome.value0 <= 0L || outcome.value1 <= 0L || composition != null) {
-            internalFailure()
+            internalFailure(InternalFailureOrigin.LEASE_READY_OUTCOME_INVALID)
             return
         }
         try {
@@ -299,7 +362,7 @@ class TargetTransport private constructor(
                 driveAndProcess(SupervisorEvent(TransportAbi.EVENT_SESSION_ACCEPTED, streamId))
             }
         } catch (_: Throwable) {
-            internalFailure()
+            internalFailure(InternalFailureOrigin.LEASE_READY_COMPOSITION_EXCEPTION)
         }
     }
 
@@ -311,13 +374,41 @@ class TargetTransport private constructor(
         runtimes.remove(streamId)?.invalidateSessions()
     }
 
-    private fun internalFailure() {
+    private fun internalFailure(origin: InternalFailureOrigin) {
         if (stopped) return
+        recordInternalFailureDiagnostic(origin)
+        val event = SupervisorEvent(TransportAbi.EVENT_INTERNAL_ERROR)
         try {
-            process(supervisor.drive(SupervisorEvent(TransportAbi.EVENT_INTERNAL_ERROR)), SystemClock.elapsedRealtime())
+            val outcome = supervisor.drive(event)
+            recordLeaseTerminalDiagnostic(event.tag, outcome)
+            process(outcome, SystemClock.elapsedRealtime())
         } catch (_: Throwable) {
+            recordInternalFailureDiagnostic(InternalFailureOrigin.INTERNAL_ERROR_DRIVE_EXCEPTION)
             leaseTerminal()
         }
+    }
+
+    /** Debug-only, fixed-schema breadcrumb for the first Kotlin-side failure trigger. */
+    private fun recordInternalFailureDiagnostic(origin: InternalFailureOrigin) {
+        if (internalFailureDiagnosticLogged) return
+        internalFailureDiagnosticLogged = true
+        Log.d(
+            TERMINAL_DIAGNOSTIC_TAG,
+            "schema=1 stage=internal_failure origin=${origin.wireName}",
+        )
+    }
+
+    /** Debug-only, fixed-schema breadcrumbs for the first C1 lease terminal. */
+    private fun recordLeaseTerminalDiagnostic(eventTag: Int, outcome: SupervisorOutcome) {
+        if (leaseTerminalDiagnosticLogged ||
+            (outcome.kind != TransportAbi.OUTCOME_LEASE_TERMINAL && outcome.kind != TransportAbi.OUTCOME_CLOSED)
+        ) return
+        leaseTerminalDiagnosticLogged = true
+        val stage = if (outcome.kind == TransportAbi.OUTCOME_CLOSED) "closed" else "lease_terminal"
+        Log.d(
+            TERMINAL_DIAGNOSTIC_TAG,
+            "schema=1 stage=$stage event=${terminalEventName(eventTag)} close_reason=${closeReasonName(outcome.closeReason)}",
+        )
     }
 
     private fun leaseTerminal() {
@@ -464,6 +555,43 @@ private sealed interface SocketEvent {
     data object PeerUnsupported : SocketEvent
 }
 
+internal sealed interface ReadPumpResult {
+    data class Bytes(val bytes: ByteArray) : ReadPumpResult
+    data class Ended(val failed: Boolean) : ReadPumpResult
+}
+
+internal class InputStreamReadPump(
+    private val io: Executor,
+    private val inputStreamFor: (streamId: Long) -> InputStream?,
+    private val callback: (streamId: Long, result: ReadPumpResult) -> Unit,
+) {
+    private val readsInFlight = ConcurrentHashMap.newKeySet<Long>()
+
+    fun receive(streamId: Long) {
+        if (!readsInFlight.add(streamId)) return
+        io.execute {
+            val scratch = ByteArray(1_048_576)
+            val result = try {
+                inputStreamFor(streamId)?.let { input ->
+                    val count = input.read(scratch)
+                    if (count < 0) ReadPumpResult.Ended(failed = false)
+                    else ReadPumpResult.Bytes(scratch.copyOf(count))
+                }
+            } catch (_: Throwable) {
+                ReadPumpResult.Ended(failed = true)
+            } finally {
+                scratch.fill(0)
+                readsInFlight.remove(streamId)
+            }
+            result?.let { callback(streamId, it) }
+        }
+    }
+
+    fun stop() {
+        readsInFlight.clear()
+    }
+}
+
 /** Strictly AF_UNIX abstract sockets; no TCP/INET address is ever constructed in this adapter. */
 private class AbstractSocketHost(private val callback: (SocketEvent) -> Unit) {
     private val io: ExecutorService = Executors.newCachedThreadPool { runnable ->
@@ -471,7 +599,15 @@ private class AbstractSocketHost(private val callback: (SocketEvent) -> Unit) {
     }
     private val nextStreamId = AtomicLong(1)
     private val streams = ConcurrentHashMap<Long, LocalSocket>()
-    private val readsInFlight = ConcurrentHashMap.newKeySet<Long>()
+    private val readPump = InputStreamReadPump(
+        io = io,
+        inputStreamFor = { streamId -> streams[streamId]?.inputStream },
+    ) { streamId, result ->
+        when (result) {
+            is ReadPumpResult.Bytes -> callback(SocketEvent.Bytes(streamId, result.bytes))
+            is ReadPumpResult.Ended -> callback(SocketEvent.ReadEnded(streamId, result.failed))
+        }
+    }
     private val stopped = AtomicBoolean(false)
     @Volatile private var listener: LocalServerSocket? = null
 
@@ -482,24 +618,7 @@ private class AbstractSocketHost(private val callback: (SocketEvent) -> Unit) {
     }
 
     fun receive(streamId: Long) {
-        if (!readsInFlight.add(streamId)) return
-        io.execute {
-            val socket = streams[streamId] ?: run {
-                readsInFlight.remove(streamId)
-                return@execute
-            }
-            val scratch = ByteArray(1_048_576)
-            try {
-                val count = socket.inputStream.read(scratch)
-                if (count < 0) callback(SocketEvent.ReadEnded(streamId, false))
-                else callback(SocketEvent.Bytes(streamId, scratch.copyOf(count)))
-            } catch (_: Throwable) {
-                callback(SocketEvent.ReadEnded(streamId, true))
-            } finally {
-                scratch.fill(0)
-                readsInFlight.remove(streamId)
-            }
-        }
+        readPump.receive(streamId)
     }
 
     fun write(streamId: Long, token: Long, bytes: ByteArray) {
@@ -530,7 +649,7 @@ private class AbstractSocketHost(private val callback: (SocketEvent) -> Unit) {
         listener = null
         streams.values.forEach { it.closeQuietly() }
         streams.clear()
-        readsInFlight.clear()
+        readPump.stop()
         io.shutdownNow()
     }
 

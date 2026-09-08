@@ -12,6 +12,10 @@ val rustTargetDirectory = layout.buildDirectory.dir("rust")
 val generatedJniDirectory = layout.buildDirectory.dir("generated/jniLibs")
 val rustCoreDirectory = file("../../transport/crypto-core")
 val rustFfiDirectory = rustCoreDirectory.resolve("ffi")
+val cargoExecutable = System.getenv("CARGO")?.takeIf { it.isNotBlank() } ?: "cargo"
+val inheritedRustEnvironment = listOf("RUSTUP_HOME", "CARGO_HOME", "RUSTC", "RUSTUP_TOOLCHAIN")
+    .mapNotNull { name -> System.getenv(name)?.takeIf { it.isNotBlank() }?.let { name to it } }
+    .toMap()
 val rustBuildInputs = fileTree(rustCoreDirectory) {
     include(
         "Cargo.toml",
@@ -78,8 +82,11 @@ val rustTasks = rustAbis.map { abi ->
         inputs.property("linkerBinary", abi.linkerBinary)
         inputs.property("linkerExecutableSuffix", ndkLinkerExecutableSuffix)
         inputs.property("rustFlags", rustFlags)
+        inputs.property("cargoExecutable", cargoExecutable)
+        inputs.properties(inheritedRustEnvironment)
         outputs.file(rustTargetDirectory.map { it.file("${abi.rustTarget}/release/libapppilotkit_transport_ffi.so") })
         environment("CARGO_TARGET_DIR", rustTargetDirectory.get().asFile.absolutePath)
+        inheritedRustEnvironment.forEach { (name, value) -> environment(name, value) }
         val ndkHostToolchainDirectory = ndkDirectory.map { ndkRoot ->
             val ndkToolchainDirectory = ndkRoot.asFile.resolve("toolchains/llvm/prebuilt")
             ndkToolchainDirectory.resolve(ndkHostTag)
@@ -94,7 +101,7 @@ val rustTasks = rustAbis.map { abi ->
                 .absolutePath,
         )
         environment("RUSTFLAGS", rustFlags)
-        commandLine("cargo", "build", "--locked", "--release", "--target", abi.rustTarget)
+        commandLine(cargoExecutable, "build", "--locked", "--release", "--target", abi.rustTarget)
     }
 }
 

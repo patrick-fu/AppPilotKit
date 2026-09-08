@@ -15,6 +15,8 @@ use apppilotkit_transport_crypto_core::{
     SessionBinding, TargetBootstrapAck,
 };
 
+#[cfg(feature = "internal-diagnostics")]
+use crate::adapter::AppleSimulatorRejectedOrigin;
 use crate::{
     Platform,
     adapter::{
@@ -96,7 +98,12 @@ fn platform_failure(failure: PlatformFailure) -> TransportFailure {
     #[cfg(feature = "internal-diagnostics")]
     {
         if kind == PlatformFailureKind::Rejected {
-            return transport.with_bootstrap_origin(BootstrapFailureOrigin::AdapterRejected);
+            return transport.with_bootstrap_origin(
+                failure.apple_simulator_rejection_origin().map_or(
+                    BootstrapFailureOrigin::AdapterRejected,
+                    BootstrapFailureOrigin::AppleSimulatorRejected,
+                ),
+            );
         }
     }
     transport
@@ -106,6 +113,7 @@ fn platform_failure(failure: PlatformFailure) -> TransportFailure {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BootstrapFailureOrigin {
     AdapterRejected,
+    AppleSimulatorRejected(AppleSimulatorRejectedOrigin),
     AckBindingMismatch,
     BootstrapIoTimeout,
     PrepareLaunchTimeout,
@@ -1272,6 +1280,15 @@ mod tests {
         assert_eq!(
             platform_failure(PlatformFailure::new(PlatformFailureKind::Rejected)).bootstrap_origin,
             Some(BootstrapFailureOrigin::AdapterRejected)
+        );
+        assert_eq!(
+            platform_failure(PlatformFailure::apple_simulator_rejected(
+                AppleSimulatorRejectedOrigin::LaunchPid,
+            ))
+            .bootstrap_origin,
+            Some(BootstrapFailureOrigin::AppleSimulatorRejected(
+                AppleSimulatorRejectedOrigin::LaunchPid,
+            ))
         );
         assert_eq!(
             bootstrap_ack_failure_origin(CloseReason::BindingMismatch),

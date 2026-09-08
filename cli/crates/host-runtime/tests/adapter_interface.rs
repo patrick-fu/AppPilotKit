@@ -268,6 +268,7 @@ struct FakeConnector {
     facts: DescriptorFacts,
     state: Arc<TargetState>,
     connections: Arc<AtomicUsize>,
+    generation: u64,
 }
 struct FakeCleanup {
     cleanup_calls: Arc<AtomicUsize>,
@@ -316,7 +317,7 @@ impl PendingLaunch for FakePending {
         _: Cancellation,
         deadline: AbsoluteDeadline,
     ) -> Result<LaunchedTargetIo, PlatformFailure> {
-        self.launches.fetch_add(1, Ordering::SeqCst);
+        let generation = self.launches.fetch_add(1, Ordering::SeqCst) as u64 + 7;
         if let Some(started) = &self.launch_started {
             started.wait();
         }
@@ -338,13 +339,20 @@ impl PendingLaunch for FakePending {
             wake: Condvar::new(),
         });
         let (broker, target) = pair();
-        spawn_bootstrap_peer(target, facts.clone(), Arc::clone(&state), deadline);
+        spawn_bootstrap_peer(
+            target,
+            facts.clone(),
+            Arc::clone(&state),
+            generation,
+            deadline,
+        );
         Ok(LaunchedTargetIo::new(
             broker,
             Arc::new(FakeConnector {
                 facts,
                 state,
                 connections: Arc::clone(&self.connections),
+                generation,
             }),
             Box::new(FakeCleanup {
                 cleanup_calls: self.cleanup_calls,
@@ -368,6 +376,7 @@ fn spawn_bootstrap_peer(
     raw: Arc<dyn RawDuplex>,
     facts: DescriptorFacts,
     state: Arc<TargetState>,
+    generation: u64,
     deadline: AbsoluteDeadline,
 ) {
     thread::spawn(move || {
@@ -385,7 +394,7 @@ fn spawn_bootstrap_peer(
             return;
         };
         let nk_hash = bootstrap_hash(&facts.binding, &facts.broker_public, &m1, &m2);
-        let (sender, pbs) = match target.read_m2(&m2, 7, 1) {
+        let (sender, pbs) = match target.read_m2(&m2, generation, 1) {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -424,7 +433,7 @@ impl RawConnector for FakeConnector {
         let pbs = Arc::clone(pbs);
         let binding = SessionBinding {
             lease_id: self.facts.binding.lease_id,
-            process_generation: 7,
+            process_generation: self.generation,
             listener_epoch: 1,
             nk_handshake_hash: *nk_hash,
         };

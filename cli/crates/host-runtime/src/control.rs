@@ -31,6 +31,8 @@ pub(crate) const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_fr
 #[cfg(feature = "internal-diagnostics")]
 pub(crate) const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str =
     "lease_terminal_before_session_commit";
+#[cfg(feature = "internal-diagnostics")]
+use crate::adapter::AppleSimulatorRejectedOrigin;
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct ReadyReference([u8; 32]);
@@ -877,6 +879,12 @@ fn decode_failure_body(decoder: &mut Decoder<'_>) -> Result<ControlFailure, Cont
         INTERNAL_PREPARE_WAIT_TIMEOUT => INTERNAL_PREPARE_WAIT_TIMEOUT,
         #[cfg(feature = "internal-diagnostics")]
         INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT => INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
+        #[cfg(feature = "internal-diagnostics")]
+        message if AppleSimulatorRejectedOrigin::from_reason_code(message).is_some() => {
+            AppleSimulatorRejectedOrigin::from_reason_code(message)
+                .expect("checked closed Apple rejection reason")
+                .reason_code()
+        }
         _ if !message.is_empty()
             && message.len() <= 256
             && !message

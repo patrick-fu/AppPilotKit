@@ -620,6 +620,99 @@ fn test_adapter(runner: Arc<FakeRunner>, app: &Path) -> AppleSimulatorAdapter {
     }
 }
 
+#[cfg(feature = "internal-diagnostics")]
+fn assert_apple_rejection_origin(
+    failure: PlatformFailure,
+    expected: apppilotkit_host_runtime::adapter::AppleSimulatorRejectedOrigin,
+) {
+    assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
+    assert_eq!(failure.apple_simulator_rejection_origin(), Some(expected));
+}
+
+#[cfg(feature = "internal-diagnostics")]
+#[test]
+fn pending_launch_marks_closed_rejection_sources_without_target_values() {
+    use apppilotkit_host_runtime::adapter::AppleSimulatorRejectedOrigin;
+
+    let artifact = TempArtifact::new("diagnostic-origins");
+    let app_id = format!(
+        "com.example.DiagnosticOrigins.{}",
+        NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed)
+    );
+    let runner = FakeRunner::new(&artifact.app, app_id.clone());
+    let adapter = test_adapter(Arc::clone(&runner), &artifact.app);
+
+    let invalid = require(TargetSelection::new(
+        Platform::IosSimulator,
+        UDID.to_owned(),
+        app_id.clone(),
+        "/".to_owned(),
+        [0; 32],
+    ));
+    let failure = adapter.begin_launch(invalid, deadline_after(1_000)).launch(
+        require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![1])),
+        Cancellation::new(),
+        deadline_after(1_000),
+    );
+    let Err(failure) = failure else {
+        panic!("invalid selection rejects before tool access");
+    };
+    assert_apple_rejection_origin(failure, AppleSimulatorRejectedOrigin::InvalidSelection);
+
+    let first = adapter.begin_launch(
+        selection(&artifact.app, &app_id, [0; 32]),
+        deadline_after(1_000),
+    );
+    let second = adapter.begin_launch(
+        selection(&artifact.app, &app_id, [0; 32]),
+        deadline_after(1_000),
+    );
+    let failure = second.launch(
+        require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![1])),
+        Cancellation::new(),
+        deadline_after(1_000),
+    );
+    let Err(failure) = failure else {
+        panic!("same target rejects");
+    };
+    assert_apple_rejection_origin(failure, AppleSimulatorRejectedOrigin::TargetAlreadyReserved);
+    require(first.abort(Cancellation::new(), deadline_after(1_000)));
+
+    let pending = adapter.begin_launch(
+        selection(&artifact.app, &app_id, [0; 32]),
+        deadline_after(1_000),
+    );
+    let failure = pending.launch(
+        require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![
+            0;
+            DESCRIPTOR_CAP
+                + 1
+        ])),
+        Cancellation::new(),
+        deadline_after(1_000),
+    );
+    let Err(failure) = failure else {
+        panic!("oversized descriptor rejects before tool access");
+    };
+    assert_apple_rejection_origin(failure, AppleSimulatorRejectedOrigin::DescriptorOversize);
+
+    runner.launch_failure.store(true, Ordering::Release);
+    let failure = adapter
+        .begin_launch(
+            selection(&artifact.app, &app_id, [0; 32]),
+            deadline_after(1_000),
+        )
+        .launch(
+            require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![1])),
+            Cancellation::new(),
+            deadline_after(1_000),
+        );
+    let Err(failure) = failure else {
+        panic!("failed launch output rejects");
+    };
+    assert_apple_rejection_origin(failure, AppleSimulatorRejectedOrigin::LaunchResult);
+}
+
 #[test]
 fn exact_pid_launch_raw_io_and_proven_cleanup() {
     let artifact = TempArtifact::new("happy");

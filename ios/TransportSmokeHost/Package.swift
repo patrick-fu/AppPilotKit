@@ -3,8 +3,7 @@
 import PackageDescription
 
 // This package is deliberately outside the production AppPilotKit package.
-// Its transport target is intentionally not a product: only this internal
-// Debug evidence host and its tests can depend on it.
+// It composes the separately packaged internal transport only in Debug.
 let package = Package(
   name: "AppPilotKitTransportSmokeHost",
   platforms: [
@@ -13,41 +12,19 @@ let package = Package(
   ],
   dependencies: [
     .package(name: "AppPilotKit", path: ".."),
+    .package(name: "AppPilotKitInternalTargetTransport", path: "../InternalTargetTransport"),
   ],
   targets: [
-    .systemLibrary(
-      name: "CAppPilotKitTargetTransport",
-      path: "Sources/CAppPilotKitTargetTransport"
-    ),
-    .systemLibrary(
-      name: "CAppPilotKitTargetTransportTestBroker",
-      path: "Tests/CAppPilotKitTargetTransportTestBroker"
-    ),
-    .target(
-      name: "AppPilotKitTargetTransportInternal",
-      dependencies: [
-        .product(name: "AppPilotKit", package: "AppPilotKit"),
-        "CAppPilotKitTargetTransport",
-      ],
-      swiftSettings: [
-        .define("APPPILOTKIT_INTERNAL", .when(configuration: .debug)),
-      ]
-    ),
     .executableTarget(
       name: "TransportSmokeHost",
       dependencies: [
-        "AppPilotKitTargetTransportInternal",
+        .product(
+          name: "AppPilotKitTargetTransportInternal",
+          package: "AppPilotKitInternalTargetTransport"
+        ),
       ],
       swiftSettings: [
         .define("APPPILOTKIT_INTERNAL", .when(configuration: .debug)),
-      ]
-    ),
-    .testTarget(
-      name: "AppPilotKitTargetTransportInternalTests",
-      dependencies: [
-        "AppPilotKitTargetTransportInternal",
-        "CAppPilotKitTargetTransport",
-        "CAppPilotKitTargetTransportTestBroker",
       ]
     ),
     .testTarget(

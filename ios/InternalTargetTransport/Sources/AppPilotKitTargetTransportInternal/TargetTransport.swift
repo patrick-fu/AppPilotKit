@@ -13,6 +13,8 @@ public actor AppPilotKitTargetTransport {
   private let initialObservedAtNanoseconds: UInt64
 
   private var bootstrapStreamID: UInt64?
+  private var pendingSessionStreamID: UInt64?
+  private var pendingSessionBytes = Data()
   private var composition: TargetRuntimeComposition?
   private var runtimes: [UInt64: SemanticProtocolRuntime] = [:]
   private var pendingWrites: [UInt64: Data] = [:]
@@ -90,6 +92,7 @@ public actor AppPilotKitTargetTransport {
     lifecycleMonitor = nil
     cancelTimers()
     wipePendingWrites()
+    wipePendingSession()
     sockets.stop()
     let live = Array(runtimes.values)
     runtimes.removeAll()
@@ -136,6 +139,14 @@ public actor AppPilotKitTargetTransport {
     case .accepted(let streamID):
       await accepted(streamID: streamID)
     case .received(let streamID, var bytes, let end, let failed):
+      if pendingSessionStreamID == streamID {
+        pendingSessionBytes.append(bytes)
+        bytes.resetBytes(in: 0..<bytes.count)
+        if end || failed {
+          wipePendingSession()
+        }
+        return
+      }
       if !bytes.isEmpty {
         await driveAndProcess(
           SupervisorEvent(
@@ -183,7 +194,11 @@ public actor AppPilotKitTargetTransport {
       return
     }
     guard composition != nil else {
-      sockets.close(streamID: streamID)
+      guard pendingSessionStreamID == nil else {
+        sockets.close(streamID: streamID)
+        return
+      }
+      pendingSessionStreamID = streamID
       return
     }
     await driveAndProcess(
@@ -215,7 +230,7 @@ public actor AppPilotKitTargetTransport {
     scheduleDeadline(from: outcome, observedAtNanoseconds: observedAtNanoseconds)
     switch outcome.kind {
     case UInt32(APK_TP_OUTCOME_NEED_INPUT):
-      if outcome.streamID != 0 { sockets.receive(streamID: outcome.streamID) }
+      await needInput(streamID: outcome.streamID)
     case UInt32(APK_TP_OUTCOME_WRITE_FRAMES):
       await write(outcome)
     case UInt32(APK_TP_OUTCOME_APPLICATION):
@@ -295,6 +310,12 @@ public actor AppPilotKitTargetTransport {
         throw TargetTransportInternalError.runtimeCompositionFailed
       }
       composition = created
+      if let pendingStreamID = pendingSessionStreamID {
+        await driveAndProcess(
+          SupervisorEvent(tag: UInt32(APK_TP_EVENT_SESSION_ACCEPTED), streamID: pendingStreamID)
+        )
+      }
+      guard !stopped else { return }
       sockets.receive(streamID: outcome.streamID)
     } catch {
       await internalFailure()
@@ -303,6 +324,7 @@ public actor AppPilotKitTargetTransport {
 
   private func sessionTerminal(streamID: UInt64) async {
     guard streamID != 0 else { return }
+    if pendingSessionStreamID == streamID { wipePendingSession() }
     sockets.close(streamID: streamID)
     wipePendingWrite(streamID: streamID)
     // Each connection owns one runtime, so invalidation here affects only A and
@@ -318,6 +340,7 @@ public actor AppPilotKitTargetTransport {
     lifecycleMonitor = nil
     cancelTimers()
     wipePendingWrites()
+    wipePendingSession()
     sockets.stop()
     let live = Array(runtimes.values)
     runtimes.removeAll()
@@ -391,5 +414,34 @@ public actor AppPilotKitTargetTransport {
   private func wipePendingWrites() {
     let ids = Array(pendingWrites.keys)
     for id in ids { wipePendingWrite(streamID: id) }
+  }
+
+  private func needInput(streamID: UInt64) async {
+    guard streamID != 0 else { return }
+    guard pendingSessionStreamID == streamID else {
+      sockets.receive(streamID: streamID)
+      return
+    }
+    var bytes = pendingSessionBytes
+    pendingSessionBytes = Data()
+    pendingSessionStreamID = nil
+    guard !bytes.isEmpty else {
+      sockets.receive(streamID: streamID)
+      return
+    }
+    await driveAndProcess(
+      SupervisorEvent(
+        tag: UInt32(APK_TP_EVENT_STREAM_BYTES),
+        streamID: streamID,
+        bytes: bytes
+      )
+    )
+    bytes.resetBytes(in: 0..<bytes.count)
+  }
+
+  private func wipePendingSession() {
+    pendingSessionStreamID = nil
+    pendingSessionBytes.resetBytes(in: 0..<pendingSessionBytes.count)
+    pendingSessionBytes = Data()
   }
 }

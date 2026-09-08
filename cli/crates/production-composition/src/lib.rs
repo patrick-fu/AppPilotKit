@@ -9,15 +9,17 @@ use apppilotkit_cli_contract::{
     CatalogDispatchPhase, CatalogExchangeError, CatalogExchangeFailure, CatalogRuntime,
     CatalogSelectError, OpenedProtocolSession, SessionSelector,
 };
+#[cfg(feature = "internal-diagnostics")]
+use apppilotkit_host_runtime::adapter::AppleSimulatorRejectedOrigin;
 use apppilotkit_host_runtime::adapter::{
     AbsoluteDeadline, Cancellation, LaunchEndpoint, PendingLaunch, PlatformFailure,
     PlatformFailureKind, PlatformTargetAdapter, PublicLaunchDescriptor, TargetSelection,
 };
 use apppilotkit_host_runtime::{
-    BrokerInstance, CloseReason, ControlFailure, ControlPacketDecoder, ControlRequest,
-    ControlResult, ControlSuccess, ErrorKind, ExchangeBody, OpenSessionBody, Platform, PrepareBody,
-    ReadyReference, Request, RuntimePaths, SessionBroker, SideEffect, decode_result_packet,
-    encode_failure_packet, encode_request_packet, encode_success_packet,
+    BrokerInstance, CloseLeaseBody, CloseReason, ControlFailure, ControlPacketDecoder,
+    ControlRequest, ControlResult, ControlSuccess, ErrorKind, ExchangeBody, OpenSessionBody,
+    Platform, PrepareBody, ReadyReference, Request, RuntimePaths, SessionBroker, SideEffect,
+    decode_result_packet, encode_failure_packet, encode_request_packet, encode_success_packet,
 };
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
@@ -35,6 +37,10 @@ const INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT: &str = "bootstrap_commit_timeout";
 const INTERNAL_TARGET_NO_SESSION_FRAMES: &str = "target_no_session_frames";
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT: &str = "lease_terminal_before_session_commit";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_OPENED_RESPONSE_INVALID: &str = "opened_response_invalid";
+#[cfg(feature = "internal-diagnostics")]
+const INTERNAL_EXCHANGE_RESPONSE_INVALID: &str = "exchange_response_invalid";
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use signal_hook::{
@@ -58,15 +64,17 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(feature = "internal-diagnostics")]
 mod internal_diagnostics {
+    #[cfg(feature = "internal-diagnostics")]
     use super::{
-        CloseReason, ControlFailure, File, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
-        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT,
-        INTERNAL_TARGET_NO_SESSION_FRAMES, INTERNAL_PREPARE_LAUNCH_TIMEOUT,
-        INTERNAL_BOOTSTRAP_IO_TIMEOUT, INTERNAL_PREPARE_WAIT_TIMEOUT, INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
-        Mutex, Value, Write,
+        AppleSimulatorRejectedOrigin, INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
+        INTERNAL_BOOTSTRAP_ADAPTER_REJECTED, INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
+        INTERNAL_BOOTSTRAP_IO_TIMEOUT, INTERNAL_EXCHANGE_RESPONSE_INVALID,
+        INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT, INTERNAL_OPENED_RESPONSE_INVALID,
+        INTERNAL_PREPARE_LAUNCH_TIMEOUT, INTERNAL_PREPARE_WAIT_TIMEOUT,
+        INTERNAL_TARGET_NO_SESSION_FRAMES,
     };
+    use super::{CloseReason, ControlFailure, File, Mutex, Value, Write};
     use apppilotkit_host_runtime::ErrorStage;
     use std::{
         env,
@@ -111,50 +119,10 @@ mod internal_diagnostics {
                 CloseReason::CleanupFailed => "cleanup_failed",
                 CloseReason::InternalError => "internal_error",
             };
-            let is_bootstrap_binding_mismatch = failure.stage == ErrorStage::Bootstrap
-                && failure.close_reason == CloseReason::BindingMismatch;
-            let reason_code = if is_bootstrap_binding_mismatch
-                && failure.message == INTERNAL_BOOTSTRAP_ADAPTER_REJECTED
-            {
-                "bootstrap_adapter_rejected"
-            } else if is_bootstrap_binding_mismatch
-                && failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
-            {
-                "bootstrap_ack_binding_mismatch"
-            } else if failure.message == INTERNAL_TARGET_NO_SESSION_FRAMES {
-                "target_no_session_frames"
-            } else if failure.message == INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT {
-                "lease_terminal_before_session_commit"
-            } else if failure.message == INTERNAL_PREPARE_LAUNCH_TIMEOUT {
-                "prepare_launch_timeout"
-            } else if failure.message == INTERNAL_BOOTSTRAP_IO_TIMEOUT {
-                "bootstrap_io_timeout"
-            } else if failure.message == INTERNAL_PREPARE_WAIT_TIMEOUT {
-                "prepare_wait_timeout"
-            } else if failure.message == INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT {
-                "bootstrap_commit_timeout"
-            } else {
-                match (failure.stage, failure.close_reason) {
-                    // The private control result does not preserve which Prepare
-                    // branch produced BindingMismatch, so this code deliberately
-                    // groups an in-progress Prepare with other prepare bindings.
-                    (ErrorStage::Prepare, CloseReason::BindingMismatch) => {
-                        "prepare_binding_mismatch"
-                    }
-                    (_, CloseReason::Stale | CloseReason::EligibilityLost) => "lease_stale",
-                    (_, CloseReason::BrokerLost) => "broker_lost",
-                    (_, CloseReason::BindingMismatch) => "binding_mismatch",
-                    (_, CloseReason::PeerClosed) => "peer_closed",
-                    (_, CloseReason::Malformed | CloseReason::SequenceViolation) => "malformed",
-                    (_, CloseReason::Timeout) => "timeout",
-                    (_, CloseReason::InternalError | CloseReason::CleanupFailed) => "internal",
-                    _ => "other",
-                }
-            };
             Self {
                 stage,
                 close_reason,
-                reason_code,
+                reason_code: reason_code(failure),
             }
         }
 
@@ -167,29 +135,89 @@ mod internal_diagnostics {
         }
     }
 
+    #[cfg(feature = "internal-diagnostics")]
+    fn reason_code(failure: &ControlFailure) -> &'static str {
+        let is_bootstrap_binding_mismatch = failure.stage == ErrorStage::Bootstrap
+            && failure.close_reason == CloseReason::BindingMismatch;
+        if is_bootstrap_binding_mismatch && failure.message == INTERNAL_BOOTSTRAP_ADAPTER_REJECTED {
+            "bootstrap_adapter_rejected"
+        } else if is_bootstrap_binding_mismatch
+            && failure.message == INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH
+        {
+            "bootstrap_ack_binding_mismatch"
+        } else if failure.message == INTERNAL_TARGET_NO_SESSION_FRAMES {
+            "target_no_session_frames"
+        } else if failure.message == INTERNAL_LEASE_TERMINAL_BEFORE_SESSION_COMMIT {
+            "lease_terminal_before_session_commit"
+        } else if failure.message == INTERNAL_PREPARE_LAUNCH_TIMEOUT {
+            "prepare_launch_timeout"
+        } else if failure.message == INTERNAL_BOOTSTRAP_IO_TIMEOUT {
+            "bootstrap_io_timeout"
+        } else if failure.message == INTERNAL_PREPARE_WAIT_TIMEOUT {
+            "prepare_wait_timeout"
+        } else if failure.message == INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT {
+            "bootstrap_commit_timeout"
+        } else if failure.message == INTERNAL_OPENED_RESPONSE_INVALID {
+            "opened_response_invalid"
+        } else if failure.message == INTERNAL_EXCHANGE_RESPONSE_INVALID {
+            "exchange_response_invalid"
+        } else if let Some(origin) = AppleSimulatorRejectedOrigin::from_reason_code(failure.message)
+        {
+            origin.reason_code()
+        } else {
+            generic_reason_code(failure)
+        }
+    }
+
+    #[cfg(not(feature = "internal-diagnostics"))]
+    fn reason_code(failure: &ControlFailure) -> &'static str {
+        generic_reason_code(failure)
+    }
+
+    fn generic_reason_code(failure: &ControlFailure) -> &'static str {
+        match (failure.stage, failure.close_reason) {
+            // The private control result does not preserve which Prepare
+            // branch produced BindingMismatch, so group it with prepare bindings.
+            (ErrorStage::Prepare, CloseReason::BindingMismatch) => "prepare_binding_mismatch",
+            (_, CloseReason::Stale | CloseReason::EligibilityLost) => "lease_stale",
+            (_, CloseReason::BrokerLost) => "broker_lost",
+            (_, CloseReason::BindingMismatch) => "binding_mismatch",
+            (_, CloseReason::PeerClosed) => "peer_closed",
+            (_, CloseReason::Malformed | CloseReason::SequenceViolation) => "malformed",
+            (_, CloseReason::Timeout) => "timeout",
+            (_, CloseReason::InternalError | CloseReason::CleanupFailed) => "internal",
+            _ => "other",
+        }
+    }
+
     fn sink() -> Option<&'static Mutex<File>> {
         static SINK: OnceLock<Option<Mutex<File>>> = OnceLock::new();
         SINK.get_or_init(|| {
-            let fd = env::var(PREPARE_FAILURE_FD)
-                .ok()
-                .and_then(|value| value.parse::<RawFd>().ok())
-                .filter(|fd| *fd > 2)?;
-            // Diagnostics may never delay the helper's public result.
-            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-            if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-            {
-                return None;
-            }
-            // The Debug/Internal launcher owns this inherited descriptor.
-            Some(Mutex::new(unsafe { File::from_raw_fd(fd) }))
+            let fd = env::var(PREPARE_FAILURE_FD).ok();
+            inherited_sink(fd.as_deref())
         })
         .as_ref()
+    }
+
+    pub(super) fn inherited_sink(fd: Option<&str>) -> Option<Mutex<File>> {
+        let fd = fd?.parse::<RawFd>().ok().filter(|fd| *fd > 2)?;
+        // Diagnostics may never delay the helper's public result.
+        let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+        if flags < 0 || unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0 {
+            return None;
+        }
+        // The Debug/Internal launcher owns this inherited descriptor.
+        Some(Mutex::new(unsafe { File::from_raw_fd(fd) }))
     }
 
     pub(super) fn record_failure(failure: &ControlFailure) {
         let Some(sink) = sink() else { return };
         let Ok(mut sink) = sink.lock() else { return };
-        let _ = write_diagnostic(&mut *sink, PrepareFailureDiagnostic::from_failure(failure));
+        record_failure_to_writer(&mut *sink, failure);
+    }
+
+    pub(super) fn record_failure_to_writer(writer: &mut dyn Write, failure: &ControlFailure) {
+        let _ = write_diagnostic(writer, PrepareFailureDiagnostic::from_failure(failure));
     }
 
     fn write_diagnostic(
@@ -214,13 +242,39 @@ mod internal_diagnostics {
     }
 }
 
-#[cfg(feature = "internal-diagnostics")]
 fn record_failure(failure: &ControlFailure) {
     internal_diagnostics::record_failure(failure);
 }
 
+#[cfg(feature = "internal-diagnostics")]
+fn record_opened_response_invalid() {
+    record_failure(&ControlFailure {
+        kind: ErrorKind::SessionExpired,
+        message: INTERNAL_OPENED_RESPONSE_INVALID,
+        retryable: false,
+        stage: apppilotkit_host_runtime::ErrorStage::SessionOpen,
+        handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+        close_reason: CloseReason::Malformed,
+    });
+}
+
+#[cfg(feature = "internal-diagnostics")]
+fn record_exchange_response_invalid() {
+    record_failure(&ControlFailure {
+        kind: ErrorKind::SessionExpired,
+        message: INTERNAL_EXCHANGE_RESPONSE_INVALID,
+        retryable: false,
+        stage: apppilotkit_host_runtime::ErrorStage::Exchange,
+        handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+        close_reason: CloseReason::BindingMismatch,
+    });
+}
+
 #[cfg(not(feature = "internal-diagnostics"))]
-fn record_failure(_: &ControlFailure) {}
+fn record_opened_response_invalid() {}
+
+#[cfg(not(feature = "internal-diagnostics"))]
+fn record_exchange_response_invalid() {}
 
 #[cfg(feature = "internal-diagnostics")]
 fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
@@ -234,7 +288,8 @@ fn public_prepare_failure_message(failure: &ControlFailure) -> &'static str {
             | INTERNAL_BOOTSTRAP_IO_TIMEOUT
             | INTERNAL_PREPARE_WAIT_TIMEOUT
             | INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT
-    ) {
+    ) || AppleSimulatorRejectedOrigin::from_reason_code(failure.message).is_some()
+    {
         if failure.close_reason == CloseReason::Timeout {
             "Broker operation timed out"
         } else {
@@ -856,22 +911,25 @@ impl BrokerCatalogRuntime {
             Ok(ControlSuccess::SessionOpened(opened)) if opened.target_token == target.token() => {
                 opened
             }
-            Ok(_) => return Err(CatalogSelectError::SessionExpired),
+            Ok(_) => {
+                record_opened_response_invalid();
+                return Err(CatalogSelectError::SessionExpired);
+            }
             Err(error) => {
                 record_failure(&error);
                 return Err(select_error(error));
             }
         };
-        if opened.response_sha256 != <[u8; 32]>::from(Sha256::digest(&opened.response)) {
-            return Err(CatalogSelectError::SessionExpired);
-        }
         let session = parse_opened_session(
-            &opened.response,
+            &opened,
+            target.token(),
             target_text,
-            opened.process_generation,
             expected_open_id.as_deref(),
         )
-        .ok_or(CatalogSelectError::SessionExpired)?;
+        .ok_or_else(|| {
+            record_opened_response_invalid();
+            CatalogSelectError::SessionExpired
+        })?;
         let key = (target_text.to_owned(), session.session_id.clone());
         self.sessions.lock().expect("Broker session state").insert(
             key,
@@ -951,11 +1009,17 @@ impl CatalogRuntime for BrokerCatalogRuntime {
             {
                 Ok(result.message)
             }
-            Ok(_) => Err(exchange_error(None, CatalogExchangeFailure::SessionExpired)),
-            Err(error) => Err(exchange_error(
-                Some(error),
-                CatalogExchangeFailure::TransportInternal,
-            )),
+            Ok(_) => {
+                record_exchange_response_invalid();
+                Err(exchange_error(None, CatalogExchangeFailure::SessionExpired))
+            }
+            Err(error) => {
+                record_failure(&error);
+                Err(exchange_error(
+                    Some(error),
+                    CatalogExchangeFailure::TransportInternal,
+                ))
+            }
         }
     }
 }
@@ -999,12 +1063,17 @@ fn exchange_error(
 }
 
 fn parse_opened_session(
-    response: &[u8],
+    opened: &apppilotkit_host_runtime::SessionOpened,
+    target_token: [u8; 32],
     target: &str,
-    generation: u64,
     expected_open_id: Option<&str>,
 ) -> Option<OpenedProtocolSession> {
-    let value: Value = serde_json::from_slice(response).ok()?;
+    if opened.target_token != target_token
+        || opened.response_sha256 != <[u8; 32]>::from(Sha256::digest(&opened.response))
+    {
+        return None;
+    }
+    let value: Value = serde_json::from_slice(&opened.response).ok()?;
     if value.get("jsonrpc")?.as_str()? != "2.0"
         || expected_open_id
             .is_some_and(|expected| value.get("id").and_then(Value::as_str) != Some(expected))
@@ -1036,7 +1105,7 @@ fn parse_opened_session(
         max_response_bytes: limits.get("maxResponseBytes")?.as_u64()?.try_into().ok()?,
         max_page_items: limits.get("maxPageItems")?.as_u64()?.try_into().ok()?,
     })
-    .filter(|session| session.generation == generation)
+    .filter(|session| session.generation == opened.process_generation)
 }
 
 fn deadline() -> u64 {
@@ -1118,6 +1187,125 @@ pub fn prepare_target(
             issued_at_unix_ms: ready.issued_at_unix_ms,
             expires_at_unix_ms: ready.expires_at_unix_ms,
         }),
+        _ => Err(PrepareError::Broker(ControlFailure::ipc(
+            apppilotkit_host_runtime::CloseReason::BindingMismatch,
+        ))),
+    }
+}
+
+fn check_no_duplicate_keys(input: &[u8]) -> Result<(), PrepareError> {
+    struct Scope {
+        is_object: bool,
+        keys: std::collections::HashSet<String>,
+        expecting_key: bool,
+    }
+    let mut stack: Vec<Scope> = Vec::new();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut str_start = 0;
+
+    for (i, &b) in input.iter().enumerate() {
+        if in_string {
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+                if let Some(scope) = stack.last_mut()
+                    && scope.is_object
+                    && scope.expecting_key
+                {
+                    let key_slice = &input[str_start..=i];
+                    let key: String = serde_json::from_slice(key_slice)
+                        .map_err(|_| PrepareError::InvalidInvocation)?;
+                    if !scope.keys.insert(key) {
+                        return Err(PrepareError::InvalidInvocation);
+                    }
+                    scope.expecting_key = false;
+                }
+            }
+        } else {
+            match b {
+                b'"' => {
+                    in_string = true;
+                    str_start = i;
+                }
+                b'{' => {
+                    stack.push(Scope {
+                        is_object: true,
+                        keys: std::collections::HashSet::new(),
+                        expecting_key: true,
+                    });
+                }
+                b'}' => {
+                    stack.pop();
+                    if let Some(parent) = stack.last_mut()
+                        && parent.is_object
+                    {
+                        parent.expecting_key = false;
+                    }
+                }
+                b'[' => {
+                    stack.push(Scope {
+                        is_object: false,
+                        keys: std::collections::HashSet::new(),
+                        expecting_key: false,
+                    });
+                }
+                b']' => {
+                    stack.pop();
+                    if let Some(parent) = stack.last_mut()
+                        && parent.is_object
+                    {
+                        parent.expecting_key = false;
+                    }
+                }
+                b',' => {
+                    if let Some(scope) = stack.last_mut()
+                        && scope.is_object
+                    {
+                        scope.expecting_key = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if in_string || !stack.is_empty() {
+        return Err(PrepareError::InvalidInvocation);
+    }
+    Ok(())
+}
+
+/// Executes the private release-fd callback operation after parsing its strict JSON.
+pub fn release_target(input: &[u8], client: &BrokerControlClient) -> Result<(), PrepareError> {
+    let value: Value =
+        serde_json::from_slice(input).map_err(|_| PrepareError::InvalidInvocation)?;
+    let object = value.as_object().ok_or(PrepareError::InvalidInvocation)?;
+    if object.len() != 2 {
+        return Err(PrepareError::InvalidInvocation);
+    }
+    check_no_duplicate_keys(input)?;
+    if object.get("schema_version").and_then(Value::as_str) != Some("1.0") {
+        return Err(PrepareError::InvalidInvocation);
+    }
+    let target_str = object
+        .get("target")
+        .and_then(Value::as_str)
+        .ok_or(PrepareError::InvalidInvocation)?;
+    let ready_ref =
+        ReadyReference::parse(target_str).map_err(|_| PrepareError::InvalidInvocation)?;
+    let request = ControlRequest::CloseLease(Request {
+        request_id: [0x52; 16],
+        deadline_unix_ms: deadline(),
+        body: CloseLeaseBody {
+            target_token: ready_ref.token(),
+            reason: CloseReason::Normal,
+        },
+    });
+    match client.call(request).map_err(PrepareError::Broker)? {
+        ControlSuccess::Closed(closed) if closed.target_token == ready_ref.token() => Ok(()),
         _ => Err(PrepareError::Broker(ControlFailure::ipc(
             apppilotkit_host_runtime::CloseReason::BindingMismatch,
         ))),
@@ -1267,6 +1455,9 @@ mod tests {
         AbsoluteDeadline, Cancellation, LaunchEndpoint, PendingLaunch, PlatformFailure,
         PlatformFailureKind, PlatformTargetAdapter, PublicLaunchDescriptor, TargetSelection,
     };
+    #[cfg(feature = "internal-diagnostics")]
+    use std::os::fd::FromRawFd;
+    use std::sync::atomic::AtomicUsize;
     use std::{
         collections::VecDeque,
         os::unix::{fs::PermissionsExt, net::UnixStream},
@@ -1303,6 +1494,26 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn prepare_failure_sidecar_is_closed_and_redacted_without_private_payloads() {
+        let failure = broker_failure(ErrorStage::Prepare, CloseReason::EligibilityLost);
+        let diagnostic = internal_diagnostics::diagnostic_value(&failure);
+        assert_eq!(diagnostic["stage"], "prepare");
+        assert_eq!(diagnostic["close_reason"], "eligibility_lost");
+        let output = String::from_utf8(internal_diagnostics::diagnostic_bytes(&failure))
+            .expect("diagnostic UTF-8");
+        for marker in [
+            "target-fixture",
+            "session-fixture",
+            "token-fixture",
+            "/private/fixture",
+            "next-action-fixture",
+            "opaque-fixture",
+        ] {
+            assert!(!output.contains(marker), "diagnostic leaked {marker}");
+        }
     }
 
     #[cfg(feature = "internal-diagnostics")]
@@ -1418,15 +1629,192 @@ mod tests {
             INTERNAL_BOOTSTRAP_COMMIT_TIMEOUT,
         ] {
             assert_eq!(
-                serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(ControlFailure {
-                    message: marker,
-                    ..timeout.clone()
-                })))
+                serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(
+                    ControlFailure {
+                        message: marker,
+                        ..timeout.clone()
+                    }
+                )))
                 .expect("marked public timeout JSON"),
                 expected,
                 "the timeout marker must not alter public CLI bytes"
             );
         }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn apple_rejection_reason_codes_are_closed_private_markers() {
+        let public = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: "Target session expired",
+            retryable: false,
+            stage: ErrorStage::Bootstrap,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            close_reason: CloseReason::BindingMismatch,
+        };
+        let expected =
+            serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(public.clone())))
+                .expect("public prepare JSON");
+        for origin in [
+            AppleSimulatorRejectedOrigin::InvalidSelection,
+            AppleSimulatorRejectedOrigin::TargetAlreadyReserved,
+            AppleSimulatorRejectedOrigin::DescriptorOversize,
+            AppleSimulatorRejectedOrigin::ArtifactPreparation,
+            AppleSimulatorRejectedOrigin::ToolOutput,
+            AppleSimulatorRejectedOrigin::CandidateVerification,
+            AppleSimulatorRejectedOrigin::LaunchResult,
+            AppleSimulatorRejectedOrigin::LaunchPid,
+            AppleSimulatorRejectedOrigin::OwnerProof,
+            AppleSimulatorRejectedOrigin::PostLaunchArtifact,
+        ] {
+            let marked = ControlFailure {
+                message: origin.reason_code(),
+                ..public.clone()
+            };
+            let packet = encode_failure_packet([0x62; 16], &marked).expect("typed marker packet");
+            let ControlResult::Failure { error, .. } =
+                decode_result_packet(&packet).expect("typed marker packet decodes")
+            else {
+                panic!("typed marker must remain a failure");
+            };
+            assert_eq!(error.message, origin.reason_code());
+            assert_eq!(
+                serde_json::to_vec(&render_prepare_error(&PrepareError::Broker(error.clone())))
+                    .expect("typed marker public JSON"),
+                expected,
+                "private Apple marker must not alter public CLI bytes"
+            );
+            let diagnostic = internal_diagnostics::diagnostic_value(&error);
+            assert_eq!(diagnostic["reason_code"], origin.reason_code());
+            assert_eq!(diagnostic.as_object().map(|value| value.len()), Some(3));
+            let output = String::from_utf8(internal_diagnostics::diagnostic_bytes(&error))
+                .expect("diagnostic UTF-8");
+            for marker in ["/private/fixture", "E28F8D8E-6211-4287-930B-1C2785D75A37"] {
+                assert!(!output.contains(marker), "diagnostic leaked {marker}");
+            }
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn opened_response_invalid_diagnostic_is_closed_and_redacted() {
+        let failure = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: INTERNAL_OPENED_RESPONSE_INVALID,
+            retryable: false,
+            stage: ErrorStage::SessionOpen,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            close_reason: CloseReason::Malformed,
+        };
+
+        let diagnostic = internal_diagnostics::diagnostic_value(&failure);
+        assert_eq!(
+            diagnostic,
+            serde_json::json!({
+                "stage": "session_open",
+                "close_reason": "malformed",
+                "reason_code": "opened_response_invalid",
+            })
+        );
+        let output = String::from_utf8(internal_diagnostics::diagnostic_bytes(&failure))
+            .expect("diagnostic UTF-8");
+        for marker in [
+            "target-fixture",
+            "session-fixture",
+            "request-fixture",
+            "response-fixture",
+            "/private/fixture",
+            "token-fixture",
+        ] {
+            assert!(!output.contains(marker), "diagnostic leaked {marker}");
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn exchange_response_invalid_diagnostic_is_closed_and_redacted() {
+        let failure = ControlFailure {
+            kind: ErrorKind::SessionExpired,
+            message: INTERNAL_EXCHANGE_RESPONSE_INVALID,
+            retryable: false,
+            stage: ErrorStage::Exchange,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            close_reason: CloseReason::BindingMismatch,
+        };
+
+        assert_eq!(
+            internal_diagnostics::diagnostic_value(&failure),
+            serde_json::json!({
+                "stage": "exchange",
+                "close_reason": "binding_mismatch",
+                "reason_code": "exchange_response_invalid",
+            })
+        );
+        let output = String::from_utf8(internal_diagnostics::diagnostic_bytes(&failure))
+            .expect("diagnostic UTF-8");
+        for marker in ["target-fixture", "session-fixture", "response-fixture"] {
+            assert!(!output.contains(marker), "diagnostic leaked {marker}");
+        }
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn internal_diagnostic_sink_ignores_missing_or_invalid_fd() {
+        assert!(internal_diagnostics::inherited_sink(None).is_none());
+        assert!(internal_diagnostics::inherited_sink(Some("not-a-fd")).is_none());
+        assert!(internal_diagnostics::inherited_sink(Some("999999")).is_none());
+    }
+
+    #[cfg(feature = "internal-diagnostics")]
+    #[test]
+    fn full_internal_diagnostic_pipe_does_not_block_or_change_select_failure() {
+        let mut fds = [-1; 2];
+        assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0, "create pipe");
+        let sink = internal_diagnostics::inherited_sink(Some(&fds[1].to_string()))
+            .expect("nonblocking inherited sink");
+        let mut writer = sink.into_inner().expect("exclusive sink");
+        let fill = [0u8; 16 * 1024];
+        let mut full = false;
+        for _ in 0..1024 {
+            match writer.write(&fill) {
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    full = true;
+                    break;
+                }
+                Err(error) => panic!("fill pipe: {error}"),
+            }
+        }
+        assert!(full, "the nonblocking diagnostic pipe must fill");
+        internal_diagnostics::record_failure_to_writer(
+            &mut writer,
+            &ControlFailure {
+                kind: ErrorKind::SessionExpired,
+                message: INTERNAL_OPENED_RESPONSE_INVALID,
+                retryable: false,
+                stage: ErrorStage::SessionOpen,
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+                close_reason: CloseReason::Malformed,
+            },
+        );
+        drop(writer);
+        drop(unsafe { File::from_raw_fd(fds[0]) });
+
+        assert!(matches!(
+            select_with_open_response(|token| {
+                let response = b"response-fixture".to_vec();
+                ControlSuccess::SessionOpened(apppilotkit_host_runtime::SessionOpened {
+                    target_token: token,
+                    response_sha256: Sha256::digest(&response).into(),
+                    response,
+                    process_generation: 17,
+                    listener_epoch: 3,
+                    handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+                })
+            }),
+            Err(CatalogSelectError::SessionExpired)
+        ));
     }
 
     mod existing_host_adapter {
@@ -1451,6 +1839,70 @@ mod tests {
                 cleanup_fails: false,
                 cleanup_started: None,
                 cleanup_release: None,
+            })
+        }
+
+        pub fn with_cleanup_tracking(
+            cleanup_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+            launches: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        ) -> std::sync::Arc<dyn apppilotkit_host_runtime::adapter::PlatformTargetAdapter> {
+            std::sync::Arc::new(FakeAdapter {
+                cleanup_calls,
+                launches,
+                connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                wrong_binding: false,
+                wrong_endpoint: false,
+                abort_fails: false,
+                launch_failure: None,
+                launch_gate: None,
+                launch_started: None,
+                launch_release: None,
+                cleanup_fails: false,
+                cleanup_started: None,
+                cleanup_release: None,
+            })
+        }
+
+        pub fn failing_cleanup(
+            cleanup_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        ) -> std::sync::Arc<dyn apppilotkit_host_runtime::adapter::PlatformTargetAdapter> {
+            std::sync::Arc::new(FakeAdapter {
+                cleanup_calls,
+                launches: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                wrong_binding: false,
+                wrong_endpoint: false,
+                abort_fails: false,
+                launch_failure: None,
+                launch_gate: None,
+                launch_started: None,
+                launch_release: None,
+                cleanup_fails: true,
+                cleanup_started: None,
+                cleanup_release: None,
+            })
+        }
+
+        pub fn with_cleanup_barriers(
+            cleanup_started: std::sync::Arc<std::sync::Barrier>,
+            cleanup_release: std::sync::Arc<std::sync::Barrier>,
+            cleanup_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+            launches: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        ) -> std::sync::Arc<dyn apppilotkit_host_runtime::adapter::PlatformTargetAdapter> {
+            std::sync::Arc::new(FakeAdapter {
+                cleanup_calls,
+                launches,
+                connections: std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                wrong_binding: false,
+                wrong_endpoint: false,
+                abort_fails: false,
+                launch_failure: None,
+                launch_gate: None,
+                launch_started: None,
+                launch_release: None,
+                cleanup_fails: false,
+                cleanup_started: Some(cleanup_started),
+                cleanup_release: Some(cleanup_release),
             })
         }
     }
@@ -1790,12 +2242,12 @@ mod tests {
     }
 
     #[test]
-    fn real_ipc_broker_adapter_completes_prepare_open_and_exchange() {
+    fn real_ipc_broker_rejects_a_restarted_target_session_and_opens_a_fresh_generation() {
         let adapter = existing_host_adapter::successful();
         let broker = Arc::new(SessionBroker::new(Arc::clone(&adapter), adapter).expect("broker"));
         let mut clients = VecDeque::new();
         let mut servers = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..8 {
             let (client, server) = UnixStream::pair().expect("pair");
             clients.push_back(client);
             servers.push(server);
@@ -1805,11 +2257,14 @@ mod tests {
         let mut tasks = Vec::new();
         for mut stream in servers {
             let broker = Arc::clone(&broker);
+            let i = tasks.len();
             tasks.push(thread::spawn(move || {
-                serve_connection(&mut stream, broker.as_ref()).expect("serve")
+                let res = serve_connection(&mut stream, broker.as_ref());
+                eprintln!("server task {} finished with {:?}", i, res);
+                res.expect("serve")
             }));
         }
-        let ready = match client
+        let ready_g1 = match client
             .call(ControlRequest::Prepare(Request {
                 request_id: [1; 16],
                 deadline_unix_ms: deadline(),
@@ -1831,7 +2286,7 @@ mod tests {
                 request_id: [2; 16],
                 deadline_unix_ms: deadline(),
                 body: OpenSessionBody {
-                    target_token: ready.target_token,
+                    target_token: ready_g1.target_token,
                     session_id: None,
                     required_capabilities: vec![SESSION_OPEN_CAPABILITY.to_owned()],
                     session_open_request: Some(b"open".to_vec()),
@@ -1849,10 +2304,10 @@ mod tests {
                 request_id: [3; 16],
                 deadline_unix_ms: deadline(),
                 body: ExchangeBody {
-                    target_token: ready.target_token,
+                    target_token: ready_g1.target_token,
                     session_id: "session_test_012345".into(),
-                    process_generation: ready.process_generation,
-                    listener_epoch: ready.listener_epoch,
+                    process_generation: ready_g1.process_generation,
+                    listener_epoch: ready_g1.listener_epoch,
                     message: message.clone(),
                     message_sha256: Sha256::digest(&message).into(),
                     side_effect: SideEffect::ReadOnly,
@@ -1862,7 +2317,95 @@ mod tests {
         assert!(
             matches!(exchanged, ControlSuccess::ExchangeComplete(value) if value.message == b"reply")
         );
-        assert_eq!(opened.process_generation, ready.process_generation);
+        assert_eq!(opened.process_generation, ready_g1.process_generation);
+
+        assert!(matches!(
+            client
+                .call(ControlRequest::CloseLease(Request {
+                    request_id: [4; 16],
+                    deadline_unix_ms: deadline(),
+                    body: apppilotkit_host_runtime::CloseLeaseBody {
+                        target_token: ready_g1.target_token,
+                        reason: CloseReason::Stale,
+                    },
+                }))
+                .expect("restart closes the old lease"),
+            ControlSuccess::Closed(_)
+        ));
+
+        let stale = client
+            .call(ControlRequest::Exchange(Request {
+                request_id: [5; 16],
+                deadline_unix_ms: deadline(),
+                body: ExchangeBody {
+                    target_token: ready_g1.target_token,
+                    session_id: "session_test_012345".into(),
+                    process_generation: ready_g1.process_generation,
+                    listener_epoch: ready_g1.listener_epoch,
+                    message: message.clone(),
+                    message_sha256: Sha256::digest(&message).into(),
+                    side_effect: SideEffect::ReadOnly,
+                },
+            }))
+            .expect_err("the G1 action is stale after restart");
+        assert_eq!(stale.close_reason, CloseReason::Stale);
+
+        let ready_g2 = match client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [6; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [7; 32],
+                },
+            }))
+            .expect("fresh prepare")
+        {
+            ControlSuccess::TargetReady(value) => value,
+            _ => panic!("ready"),
+        };
+        assert_ne!(ready_g1.target_token, ready_g2.target_token);
+        assert_ne!(ready_g1.process_generation, ready_g2.process_generation);
+
+        let opened_g2 = match client
+            .call(ControlRequest::OpenSession(Request {
+                request_id: [7; 16],
+                deadline_unix_ms: deadline(),
+                body: OpenSessionBody {
+                    target_token: ready_g2.target_token,
+                    session_id: None,
+                    required_capabilities: vec![SESSION_OPEN_CAPABILITY.to_owned()],
+                    session_open_request: Some(b"open".to_vec()),
+                    session_open_request_sha256: Some(Sha256::digest(b"open").into()),
+                },
+            }))
+            .expect("fresh open")
+        {
+            ControlSuccess::SessionOpened(value) => value,
+            _ => panic!("opened"),
+        };
+        assert_eq!(opened_g2.process_generation, ready_g2.process_generation);
+        let exchanged_g2 = client
+            .call(ControlRequest::Exchange(Request {
+                request_id: [8; 16],
+                deadline_unix_ms: deadline(),
+                body: ExchangeBody {
+                    target_token: ready_g2.target_token,
+                    session_id: "session_test_012345".into(),
+                    process_generation: ready_g2.process_generation,
+                    listener_epoch: ready_g2.listener_epoch,
+                    message: message.clone(),
+                    message_sha256: Sha256::digest(&message).into(),
+                    side_effect: SideEffect::ReadOnly,
+                },
+            }))
+            .expect("fresh exchange");
+        assert!(
+            matches!(exchanged_g2, ControlSuccess::ExchangeComplete(value) if value.message == b"reply")
+        );
         for task in tasks {
             task.join().expect("server");
         }
@@ -1962,6 +2505,214 @@ mod tests {
             .exchange(&session, &serde_json::json!({"method":"semantic.list"}))
             .expect("exchange");
         assert!(response.starts_with(b"{\"jsonrpc\""));
+        exchange_server_task.join().expect("exchange server");
+    }
+
+    fn select_with_open_response(
+        response: impl FnOnce([u8; 32]) -> ControlSuccess + Send + 'static,
+    ) -> Result<OpenedProtocolSession, CatalogSelectError> {
+        let target = ReadyReference::from_token([0x6a; 32]).to_string();
+        let token = ReadyReference::parse(&target)
+            .expect("ready reference")
+            .token();
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("open pair");
+        let runtime = BrokerCatalogRuntime::new(BrokerControlClient::with_connector(Arc::new(
+            PairConnector(Mutex::new(Some(client_stream))),
+        )));
+        let server = thread::spawn(move || {
+            let mut packet = Vec::new();
+            server_stream
+                .read_to_end(&mut packet)
+                .expect("open request");
+            let ControlRequest::OpenSession(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode open")
+            else {
+                panic!("open request")
+            };
+            server_stream
+                .write_all(
+                    &encode_success_packet(request.request_id, response(token))
+                        .expect("open response"),
+                )
+                .expect("write open response");
+        });
+        let result = runtime.select(SessionSelector {
+            session: None,
+            target: Some(&target),
+        });
+        server.join().expect("open server");
+        result
+    }
+
+    #[test]
+    fn opened_session_validation_rejects_a_wrong_target_digest_or_payload() {
+        let target_token = [0x6a; 32];
+        let response = serde_json::to_vec(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "open-1",
+            "result": {
+                "context": {"id": "session_test_0123456789", "generation": 17},
+                "protocol": {"major": 1, "minor": 2},
+                "capabilities": ["semantic.catalog"],
+                "limits": {"maxRequestBytes": 1024, "maxResponseBytes": 1024, "maxPageItems": 1}
+            }
+        }))
+        .expect("opened response");
+        let opened = apppilotkit_host_runtime::SessionOpened {
+            target_token,
+            response_sha256: Sha256::digest(&response).into(),
+            response,
+            process_generation: 17,
+            listener_epoch: 3,
+            handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+        };
+        assert!(
+            parse_opened_session(&opened, target_token, "target-fixture", Some("open-1")).is_some()
+        );
+        assert!(
+            parse_opened_session(&opened, [0x5a; 32], "target-fixture", Some("open-1")).is_none()
+        );
+        assert!(
+            parse_opened_session(
+                &apppilotkit_host_runtime::SessionOpened {
+                    response_sha256: [0x4d; 32],
+                    ..opened.clone()
+                },
+                target_token,
+                "target-fixture",
+                Some("open-1"),
+            )
+            .is_none()
+        );
+        assert!(parse_opened_session(
+            &apppilotkit_host_runtime::SessionOpened {
+                response: b"response-fixture target-fixture session-fixture token-fixture /private/fixture request-fixture".to_vec(),
+                response_sha256: Sha256::digest(b"response-fixture target-fixture session-fixture token-fixture /private/fixture request-fixture").into(),
+                ..opened
+            },
+            target_token,
+            "target-fixture",
+            Some("open-1"),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn invalid_opened_responses_remain_session_expired() {
+        let unexpected = select_with_open_response(|_| {
+            ControlSuccess::SessionOpened(apppilotkit_host_runtime::SessionOpened {
+                target_token: [0x5a; 32],
+                response: b"response-fixture".to_vec(),
+                response_sha256: Sha256::digest(b"response-fixture").into(),
+                process_generation: 17,
+                listener_epoch: 3,
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            })
+        });
+        assert!(matches!(
+            unexpected,
+            Err(CatalogSelectError::SessionExpired)
+        ));
+
+        let parse_failure = select_with_open_response(|token| {
+            let response = b"response-fixture target-fixture session-fixture token-fixture /private/fixture request-fixture".to_vec();
+            ControlSuccess::SessionOpened(apppilotkit_host_runtime::SessionOpened {
+                target_token: token,
+                response_sha256: Sha256::digest(&response).into(),
+                response,
+                process_generation: 17,
+                listener_epoch: 3,
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            })
+        });
+        assert!(matches!(
+            parse_failure,
+            Err(CatalogSelectError::SessionExpired)
+        ));
+    }
+
+    #[test]
+    fn invalid_exchange_success_remains_session_expired() {
+        let target = ReadyReference::from_token([0x6b; 32]).to_string();
+        let token = ReadyReference::parse(&target)
+            .expect("ready reference")
+            .token();
+        let (open_client, mut open_server) = UnixStream::pair().expect("open pair");
+        let (exchange_client, mut exchange_server) = UnixStream::pair().expect("exchange pair");
+        let client = BrokerControlClient::with_connector(Arc::new(QueueConnector(Mutex::new(
+            VecDeque::from([open_client, exchange_client]),
+        ))));
+        let runtime = BrokerCatalogRuntime::new(client);
+        let open_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": "open-1",
+            "result": {
+                "context": {"id": "session_test_0123456789", "generation": 17},
+                "protocol": {"major": 1, "minor": 2},
+                "capabilities": ["semantic.catalog"],
+                "limits": {"maxRequestBytes": 1024, "maxResponseBytes": 1024, "maxPageItems": 1}
+            }
+        });
+        let open_bytes = serde_json::to_vec(&open_response).expect("open response");
+        let open_server_task = thread::spawn(move || {
+            let mut packet = Vec::new();
+            open_server.read_to_end(&mut packet).expect("open request");
+            let ControlRequest::OpenSession(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode open")
+            else {
+                panic!("open request")
+            };
+            let success = ControlSuccess::SessionOpened(apppilotkit_host_runtime::SessionOpened {
+                target_token: token,
+                response_sha256: Sha256::digest(&open_bytes).into(),
+                response: open_bytes,
+                process_generation: 17,
+                listener_epoch: 3,
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            });
+            open_server
+                .write_all(
+                    &encode_success_packet(request.request_id, success).expect("open success"),
+                )
+                .expect("open response");
+        });
+        let session = runtime
+            .select(SessionSelector {
+                session: None,
+                target: Some(&target),
+            })
+            .expect("opened session");
+        open_server_task.join().expect("open server");
+
+        let exchange_server_task = thread::spawn(move || {
+            let mut packet = Vec::new();
+            exchange_server
+                .read_to_end(&mut packet)
+                .expect("exchange request");
+            let ControlRequest::Exchange(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode exchange")
+            else {
+                panic!("exchange request")
+            };
+            let success = ControlSuccess::Closed(apppilotkit_host_runtime::Closed {
+                target_token: request.body.target_token,
+                session_id: Some(request.body.session_id),
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            });
+            exchange_server
+                .write_all(
+                    &encode_success_packet(request.request_id, success).expect("closed success"),
+                )
+                .expect("closed response");
+        });
+        let result = runtime.exchange(&session, &serde_json::json!({"method": "semantic.list"}));
+        assert!(matches!(
+            result,
+            Err(CatalogExchangeError {
+                failure: CatalogExchangeFailure::SessionExpired,
+                ..
+            })
+        ));
         exchange_server_task.join().expect("exchange server");
     }
 
@@ -2308,5 +3059,418 @@ mod tests {
                 PathBuf::from("/prefix/libexec/apppilotkit-target-prepare")
             ]
         );
+    }
+
+    #[test]
+    fn release_target_rejects_malformed_missing_and_duplicate_keys_before_broker_ipc() {
+        let dummy_token = [0x55; 32];
+        let valid_target = ReadyReference::from_token(dummy_token).to_string();
+        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(None))));
+
+        // Missing target
+        let missing_target = serde_json::json!({"schema_version": "1.0"});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&missing_target).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Missing schema_version
+        let missing_schema = serde_json::json!({"target": valid_target});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&missing_schema).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Wrong schema_version
+        let wrong_schema = serde_json::json!({"schema_version": "2.0", "target": valid_target});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&wrong_schema).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Extra property
+        let extra_property = serde_json::json!({
+            "schema_version": "1.0",
+            "target": valid_target,
+            "extra": "bad"
+        });
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&extra_property).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Non-string schema_version
+        let int_schema = serde_json::json!({"schema_version": 1, "target": valid_target});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&int_schema).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Non-string target
+        let int_target = serde_json::json!({"schema_version": "1.0", "target": 123});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&int_target).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        let null_target = serde_json::json!({"schema_version": "1.0", "target": null});
+        assert!(matches!(
+            release_target(&serde_json::to_vec(&null_target).unwrap(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Duplicate keys in raw JSON
+        let dup_schema = format!(
+            r#"{{"schema_version":"1.0","schema_version":"1.0","target":"{valid_target}"}}"#
+        );
+        assert!(matches!(
+            release_target(dup_schema.as_bytes(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        let dup_target = format!(
+            r#"{{"target":"{valid_target}","schema_version":"1.0","target":"{valid_target}"}}"#
+        );
+        assert!(matches!(
+            release_target(dup_target.as_bytes(), &client),
+            Err(PrepareError::InvalidInvocation)
+        ));
+
+        // Invalid target formats (wrong prefix, wrong length, bad base64, padding)
+        for invalid_target in [
+            "not_target_prefix",
+            "target_too_short",
+            "target_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "target_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "target_???invalid-chars-not-base64url$$$$$$$$$$$$$$",
+            "",
+        ] {
+            let bad_ref = serde_json::json!({
+                "schema_version": "1.0",
+                "target": invalid_target,
+            });
+            assert!(
+                matches!(
+                    release_target(&serde_json::to_vec(&bad_ref).unwrap(), &client),
+                    Err(PrepareError::InvalidInvocation)
+                ),
+                "expected InvalidInvocation for invalid target: {invalid_target}"
+            );
+        }
+    }
+
+    #[test]
+    fn release_target_completes_valid_release_and_drives_exact_owner_cleanup() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let launches = Arc::new(AtomicUsize::new(0));
+        let adapter = existing_host_adapter::with_cleanup_tracking(
+            Arc::clone(&cleanup_calls),
+            Arc::clone(&launches),
+        );
+        let broker = Arc::new(
+            SessionBroker::new(Arc::clone(&adapter) as _, Arc::clone(&adapter) as _)
+                .expect("broker"),
+        );
+        let mut clients = VecDeque::new();
+        let mut servers = Vec::new();
+        for _ in 0..4 {
+            let (client, server) = UnixStream::pair().expect("pair");
+            clients.push_back(client);
+            servers.push(server);
+        }
+        let client =
+            BrokerControlClient::with_connector(Arc::new(QueueConnector(Mutex::new(clients))));
+        let mut tasks = Vec::new();
+        for mut stream in servers {
+            let broker = Arc::clone(&broker);
+            tasks.push(thread::spawn(move || {
+                serve_connection(&mut stream, broker.as_ref()).expect("serve")
+            }));
+        }
+
+        // 1. Prepare a target
+        let ready = match client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [1; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [7; 32],
+                },
+            }))
+            .expect("prepare")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("expected TargetReady"),
+        };
+        let target_str = ReadyReference::from_token(ready.target_token).to_string();
+        assert_eq!(launches.load(Ordering::SeqCst), 1);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 0);
+
+        // 2. Valid release
+        let release_json = serde_json::json!({
+            "schema_version": "1.0",
+            "target": target_str,
+        });
+        release_target(&serde_json::to_vec(&release_json).unwrap(), &client)
+            .expect("release succeeds");
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+
+        // 3. Stale ref: calling release again with the same target fails with Stale
+        let second_release = release_target(&serde_json::to_vec(&release_json).unwrap(), &client);
+        match second_release {
+            Err(PrepareError::Broker(failure)) => {
+                assert_eq!(failure.close_reason, CloseReason::Stale);
+                assert_eq!(failure.kind, ErrorKind::SessionExpired);
+            }
+            other => panic!("expected Broker(Stale), got {other:?}"),
+        }
+
+        // 4. Subsequent prepare of same key launches a fresh target
+        let ready_g2 = match client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [2; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [7; 32],
+                },
+            }))
+            .expect("fresh prepare")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("expected TargetReady"),
+        };
+        assert_ne!(ready.target_token, ready_g2.target_token);
+        assert_eq!(launches.load(Ordering::SeqCst), 2);
+
+        for task in tasks {
+            task.join().expect("server task joins");
+        }
+    }
+
+    #[test]
+    fn release_target_rejects_unknown_reference_with_selection_required() {
+        let adapter = existing_host_adapter::successful();
+        let broker = Arc::new(SessionBroker::new(Arc::clone(&adapter), adapter).expect("broker"));
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
+            Some(client_stream),
+        ))));
+        let server = thread::spawn(move || {
+            serve_connection(&mut server_stream, broker.as_ref()).expect("serve");
+        });
+
+        let unknown_target = ReadyReference::from_token([0x99; 32]).to_string();
+        let release_json = serde_json::json!({
+            "schema_version": "1.0",
+            "target": unknown_target,
+        });
+        let result = release_target(&serde_json::to_vec(&release_json).unwrap(), &client);
+        match result {
+            Err(PrepareError::Broker(failure)) => {
+                assert_eq!(failure.kind, ErrorKind::TargetSelectionRequired);
+            }
+            other => panic!("expected TargetSelectionRequired, got {other:?}"),
+        }
+        server.join().expect("server joins");
+    }
+
+    #[test]
+    fn release_target_rejects_closed_response_with_mismatched_target_token() {
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
+            Some(client_stream),
+        ))));
+        let server = thread::spawn(move || {
+            let mut packet = Vec::new();
+            server_stream
+                .read_to_end(&mut packet)
+                .expect("read close request");
+            let ControlRequest::CloseLease(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet)
+                    .expect("decode close request")
+            else {
+                panic!("expected CloseLease request");
+            };
+            let mismatched_closed = ControlSuccess::Closed(apppilotkit_host_runtime::Closed {
+                target_token: [0x99; 32],
+                session_id: None,
+                handoff: apppilotkit_host_runtime::HandoffState::NotHandedOff,
+            });
+            server_stream
+                .write_all(
+                    &encode_success_packet(request.request_id, mismatched_closed)
+                        .expect("encode success"),
+                )
+                .expect("write response");
+        });
+
+        let target_str = ReadyReference::from_token([0x55; 32]).to_string();
+        let release_json = serde_json::json!({
+            "schema_version": "1.0",
+            "target": target_str,
+        });
+        let result = release_target(&serde_json::to_vec(&release_json).unwrap(), &client);
+        match result {
+            Err(PrepareError::Broker(failure)) => {
+                assert_eq!(failure.close_reason, CloseReason::BindingMismatch);
+            }
+            other => panic!("expected Broker(BindingMismatch), got {other:?}"),
+        }
+        server.join().expect("server joins");
+    }
+
+    #[test]
+    fn release_target_fails_closed_when_cleanup_fails() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let adapter = existing_host_adapter::failing_cleanup(Arc::clone(&cleanup_calls));
+        let broker = Arc::new(
+            SessionBroker::new(Arc::clone(&adapter) as _, Arc::clone(&adapter) as _)
+                .expect("broker"),
+        );
+        let (p_client, mut p_server) = UnixStream::pair().expect("pair");
+        let (r_client, mut r_server) = UnixStream::pair().expect("pair");
+        let client = BrokerControlClient::with_connector(Arc::new(QueueConnector(Mutex::new(
+            VecDeque::from([p_client, r_client]),
+        ))));
+
+        let b1 = Arc::clone(&broker);
+        let s1 =
+            thread::spawn(move || serve_connection(&mut p_server, b1.as_ref()).expect("serve"));
+        let b2 = Arc::clone(&broker);
+        let s2 =
+            thread::spawn(move || serve_connection(&mut r_server, b2.as_ref()).expect("serve"));
+
+        let ready = match client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [1; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [7; 32],
+                },
+            }))
+            .expect("prepare")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("expected TargetReady"),
+        };
+        let target_str = ReadyReference::from_token(ready.target_token).to_string();
+        let release_json = serde_json::json!({
+            "schema_version": "1.0",
+            "target": target_str,
+        });
+        let result = release_target(&serde_json::to_vec(&release_json).unwrap(), &client);
+        match result {
+            Err(PrepareError::Broker(failure)) => {
+                assert_eq!(failure.stage, ErrorStage::Cleanup);
+                assert_eq!(failure.close_reason, CloseReason::CleanupFailed);
+                assert_eq!(failure.kind, ErrorKind::InternalError);
+            }
+            other => panic!("expected Broker(CleanupFailed), got {other:?}"),
+        }
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        s1.join().expect("s1");
+        s2.join().expect("s2");
+    }
+
+    #[test]
+    fn release_target_handles_concurrent_release_and_blocks_prepare_until_cleanup_completes() {
+        let cleanup_started = Arc::new(std::sync::Barrier::new(2));
+        let cleanup_release = Arc::new(std::sync::Barrier::new(2));
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let launches = Arc::new(AtomicUsize::new(0));
+        let adapter = existing_host_adapter::with_cleanup_barriers(
+            Arc::clone(&cleanup_started),
+            Arc::clone(&cleanup_release),
+            Arc::clone(&cleanup_calls),
+            Arc::clone(&launches),
+        );
+        let broker = Arc::new(
+            SessionBroker::new(Arc::clone(&adapter) as _, Arc::clone(&adapter) as _)
+                .expect("broker"),
+        );
+        let mut clients = VecDeque::new();
+        let mut servers = Vec::new();
+        for _ in 0..3 {
+            let (client, server) = UnixStream::pair().expect("pair");
+            clients.push_back(client);
+            servers.push(server);
+        }
+        let client = Arc::new(BrokerControlClient::with_connector(Arc::new(
+            QueueConnector(Mutex::new(clients)),
+        )));
+        let mut tasks = Vec::new();
+        for mut stream in servers {
+            let broker = Arc::clone(&broker);
+            tasks.push(thread::spawn(move || {
+                serve_connection(&mut stream, broker.as_ref()).expect("serve")
+            }));
+        }
+
+        let ready = match client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [1; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [7; 32],
+                },
+            }))
+            .expect("prepare")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("expected TargetReady"),
+        };
+        let target_str = ReadyReference::from_token(ready.target_token).to_string();
+        let release_json = serde_json::to_vec(&serde_json::json!({
+            "schema_version": "1.0",
+            "target": target_str,
+        }))
+        .unwrap();
+
+        // Spawn first release: will enter cleanup and hit cleanup_started barrier
+        let c1 = Arc::clone(&client);
+        let r1_bytes = release_json.clone();
+        let t1 = thread::spawn(move || release_target(&r1_bytes, &c1));
+        cleanup_started.wait();
+
+        // While cleanup is blocked, prepare with conflicting digest is rejected
+        let conflict = client
+            .call(ControlRequest::Prepare(Request {
+                request_id: [2; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [8; 32],
+                },
+            }))
+            .expect_err("conflicting prepare while lease closing fails");
+        assert_eq!(conflict.close_reason, CloseReason::BindingMismatch);
+
+        // Unblock cleanup
+        cleanup_release.wait();
+        t1.join().expect("t1 joins").expect("release succeeds");
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+
+        for task in tasks {
+            task.join().expect("server joins");
+        }
     }
 }
