@@ -128,6 +128,9 @@ impl PendingLaunch for AndroidPendingLaunch {
         let install = (|| {
             client.probe(&cancellation, deadline)?;
             client.require_online(&cancellation, deadline)?;
+            // Package replacement of a foreground app can make SystemUI
+            // relaunch it after am start -S, racing the bootstrap descriptor.
+            client.force_stop(&self.package, &cancellation, deadline)?;
             client.install(&snapshot.path, &cancellation, deadline)
         })();
         let snapshot_cleanup = snapshot.cleanup();
@@ -222,7 +225,7 @@ fn rollback_after_started(
     rollback_after(original, || {
         let cleanup_deadline = rollback_deadline()?;
         let forward = remove_forward(cleanup_deadline);
-        let stopped = client.force_stop(package, cleanup_deadline);
+        let stopped = client.force_stop(package, &Cancellation::new(), cleanup_deadline);
         forward.and(stopped)
     })
 }
@@ -342,10 +345,15 @@ impl AdbClient<'_> {
         parse_start(&output, component)
     }
 
-    fn force_stop(&self, package: &str, deadline: AbsoluteDeadline) -> Result<(), PlatformFailure> {
+    fn force_stop(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
         let output = self.run(
             &strings(&["shell", "am", "force-stop", package]),
-            &Cancellation::new(),
+            cancellation,
             deadline,
         )?;
         require_exact_line(&output, "")
@@ -571,6 +579,9 @@ fn parse_start(output: &str, component: &str) -> Result<(), PlatformFailure> {
     let mut activity = 0;
     let mut complete = 0;
     let mut launch_state = 0;
+    let mut this_time = 0;
+    let mut total_time = 0;
+    let mut wait_time = 0;
     for line in value.split('\n') {
         if line == "Status: ok" {
             status += 1;
@@ -580,18 +591,23 @@ fn parse_start(output: &str, component: &str) -> Result<(), PlatformFailure> {
             complete += 1;
         } else if line == "LaunchState: COLD" || unknown_launch_state(line) {
             launch_state += 1;
-        } else if line.starts_with("Stopping: ")
-            || line.starts_with("Starting: Intent { ")
-            || numeric_field(line, "TotalTime: ")
-            || numeric_field(line, "WaitTime: ")
-            || numeric_field(line, "ThisTime: ")
-        {
+        } else if numeric_field(line, "ThisTime: ") {
+            this_time += 1;
+        } else if numeric_field(line, "TotalTime: ") {
+            total_time += 1;
+        } else if numeric_field(line, "WaitTime: ") {
+            wait_time += 1;
+        } else if line.starts_with("Stopping: ") || line.starts_with("Starting: Intent { ") {
             continue;
         } else {
             return Err(failure(PlatformFailureKind::Rejected));
         }
     }
-    if status == 1 && activity == 1 && complete == 1 && launch_state == 1 {
+    // Older Android releases report ThisTime instead of LaunchState. Require
+    // their complete timing tuple, not an incomplete modern transcript.
+    let legacy = launch_state == 0 && this_time == 1 && total_time == 1 && wait_time == 1;
+    let modern = launch_state == 1 && this_time == 0;
+    if status == 1 && activity == 1 && complete == 1 && (modern || legacy) {
         Ok(())
     } else {
         Err(failure(PlatformFailureKind::Rejected))

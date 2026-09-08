@@ -15,7 +15,7 @@ The adapter lifecycle is:
 
 ```text
 Reserved(endpoint only)
-  -> Validated -> Installed -> Started -> ForwardOwned -> Connected
+  -> Validated -> SelectedAppStopped -> Installed -> Started -> ForwardOwned -> Connected
   -> Cleaned
 
 Any failure before ForwardOwned -> Terminal
@@ -26,12 +26,18 @@ Any failure after ForwardOwned  -> Cleaned -> Terminal
 `begin_launch` performs no ADB operation. Before any ADB operation, `launch`
 requires the selected serial to match exactly `emulator-<digits>`; physical
 device or other selector shapes are rejected. It then uses only
-`adb -s <exact-emulator-serial>`, installs the exact selected artifact, starts a new
+`adb -s <exact-emulator-serial>`, stops the selected app before installing the
+exact selected artifact, starts a new
 selected app process once, creates exactly one
 `forward tcp:0 localabstract:<exact-name>`, and connects only to the allocated
 loopback port. The cleanup receipt removes only that exact mapping. Missing,
 partial, malformed, oversized, non-UTF-8, or ambiguous tool output fails
 closed. Local contract tests are not real-device acceptance evidence.
+
+Stopping before installation prevents SystemUI from restoring a foreground
+Activity after package replacement and racing the fresh bootstrap launch on
+Android API 37. This step uses the launch cancellation token and deadline;
+`am start -W -S` and rejection of already-running Activity warnings remain.
 
 Before invoking ADB, the adapter copies the caller-selected artifact through a
 bounded SHA-256 check into a mode-`0400` adapter-owned snapshot. ADB receives
@@ -48,10 +54,15 @@ text is not an APK identity proof. The frozen Android 36 host-tool golden builds
 minimal APKs with `aapt2` and checks the same manifest independently with
 `aapt2 dump xmltree`.
 
-Successful launch output must contain exactly one supported launch state:
-`LaunchState: COLD` or `LaunchState: UNKNOWN (<digits>)`. The latter is an
-observed valid Android 16 result. Missing, duplicate, malformed, `HOT`, `WARM`,
-or other states fail closed. Once forward creation may have had a side effect,
+Successful launch output requires `Status: ok`, the exact Activity, and
+`Complete`. Modern Android transcripts additionally require exactly one
+`LaunchState: COLD` or `LaunchState: UNKNOWN (<digits>)`; the latter is an
+observed valid Android 16 result. Legacy Android API 26–28 transcripts instead
+require one numeric `ThisTime`, `TotalTime`, and `WaitTime` each, without a
+`LaunchState`. Missing, mixed, duplicate, malformed, `HOT`, `WARM`, or
+already-running Activity warnings fail closed. This is Host tool-output
+compatibility; bootstrap binding and Protocol contracts are unchanged.
+Once forward creation may have had a side effect,
 rollback uses a fresh two-second cleanup deadline and a new
 cancellation token. Successful rollback preserves the original failure kind;
 failed or foreign cleanup becomes `CleanupFailed` without deleting another
