@@ -6,27 +6,39 @@ host_dir=${script_dir:h}
 android_dir=${host_dir:h}
 repo_dir=${android_dir:h}
 app_id=dev.apppilotkit.acceptancehost
+rustup_root=/Volumes/WD/Toolchains/AppPilotKit/rustup
+cargo_root=/Volumes/WD/Toolchains/AppPilotKit/cargo
+rust_toolchain=1.94.0
+
+[[ -d "$rustup_root" && -d "$cargo_root" ]] || {
+  print -u2 "Rust toolchain checkpoint: missing isolated AppPilotKit Rust toolchain"
+  exit 2
+}
+rustup_bin="$cargo_root/bin/rustup"
+cargo="$cargo_root/bin/cargo"
+rustc="$cargo_root/bin/rustc"
+[[ -x "$rustup_bin" && -x "$cargo" && -x "$rustc" ]] || {
+  print -u2 "Rust toolchain checkpoint: rustup/cargo/rustc shims are unavailable"
+  exit 2
+}
+export RUSTUP_HOME="$rustup_root"
+export CARGO_HOME="$cargo_root"
+export RUSTUP_TOOLCHAIN="$rust_toolchain"
+export PATH="$cargo_root/bin:$PATH"
+export CARGO="$cargo"
+export RUSTC="$rustc"
+
+for rust_target in aarch64-linux-android x86_64-linux-android; do
+  if ! "$rustup_bin" target list --installed --toolchain "$rust_toolchain" | grep -Fx "$rust_target" >/dev/null; then
+    print -u2 "Rust toolchain checkpoint: target $rust_target is not installed for $rust_toolchain"
+    exit 2
+  fi
+done
 
 if (( $# > 1 )); then
   print -u2 "usage: $0 [emulator-serial]"
   exit 2
 fi
-
-if [[ -n ${CARGO:-} ]]; then
-  cargo=$CARGO
-  if [[ $cargo == */* ]]; then
-    # Resolve to an absolute path without following rustup's cargo symlink.
-    # Gradle invokes CARGO with Cargo's basename; `${cargo:A}` would turn a
-    # rustup shim into a rustup executable and pass Cargo arguments to rustup.
-    cargo=${cargo:a}
-    [[ -x "$cargo" ]] || { print -u2 "Rust toolchain checkpoint: CARGO is not executable: $cargo"; exit 2; }
-  else
-    cargo=$(command -v "$cargo" || true)
-  fi
-else
-  cargo=$(command -v cargo || true)
-fi
-[[ -n "$cargo" ]] || { print -u2 "Rust toolchain checkpoint: cargo is unavailable"; exit 2; }
 
 if [[ -n ${APPPILOTKIT_ANDROID_ADB:-} ]]; then
   adb=$APPPILOTKIT_ANDROID_ADB
@@ -83,9 +95,7 @@ export APPPILOTKIT_ANDROID_ADB="$adb"
 export JAVA_HOME="$java_home"
 export CARGO_TARGET_DIR="$work_root/cargo-target"
 export CARGO_BUILD_JOBS=1
-# Keep Gradle and the installed CLI build on the same caller-selected Cargo.
-# RUSTUP_HOME, CARGO_HOME, and RUSTC remain inherited for rustup-based setups.
-export CARGO="$cargo"
+# Gradle and the installed CLI build share the same explicit Rust toolchain.
 
 (
   cd "$android_dir"
