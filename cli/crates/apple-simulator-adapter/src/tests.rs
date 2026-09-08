@@ -310,6 +310,8 @@ struct FakeRunner {
     running: AtomicBool,
     ambiguous: AtomicBool,
     installed: AtomicBool,
+    container_failure: AtomicBool,
+    process_table_failure: AtomicBool,
     identity_token: AtomicU64,
     term_effective: AtomicBool,
     kill_effective: AtomicBool,
@@ -335,6 +337,8 @@ impl FakeRunner {
             running: AtomicBool::new(false),
             ambiguous: AtomicBool::new(false),
             installed: AtomicBool::new(true),
+            container_failure: AtomicBool::new(false),
+            process_table_failure: AtomicBool::new(false),
             identity_token: AtomicU64::new(1),
             term_effective: AtomicBool::new(true),
             kill_effective: AtomicBool::new(true),
@@ -467,9 +471,15 @@ impl ToolRunner for Arc<FakeRunner> {
                 "app".to_owned(),
             ]
         {
+            if self.container_failure.load(Ordering::Acquire) {
+                return Err(failure(PlatformFailureKind::Rejected));
+            }
             return Ok(success(format!("{}\n", self.app.display()).into_bytes()));
         }
         if request.program == Path::new("/bin/ps") && args == ["-axo", "pid=,command="] {
+            if self.process_table_failure.load(Ordering::Acquire) {
+                return Err(failure(PlatformFailureKind::TimedOut));
+            }
             return Ok(success(self.process_table()));
         }
         if args
@@ -1394,6 +1404,22 @@ fn absent_app_installs_snapshot_and_owned_cleanup_uninstalls_exact_app() {
         Cancellation::new(),
         deadline_after(1_000),
     ));
+    {
+        let requests = runner.requests.lock().expect("requests");
+        let presence_checks = requests
+            .iter()
+            .filter(|request| request.args.get(1) == Some(&OsString::from("listapps")))
+            .count();
+        assert_eq!(
+            presence_checks, 1,
+            "the exact container and artifact verification prove installation without a second inventory query"
+        );
+        assert!(
+            !requests
+                .iter()
+                .any(|request| request.args == ["simctl", "help", "spawn"].map(OsString::from))
+        );
+    }
     let (_, _, cleanup) = launched.into_parts();
     require(cleanup.cleanup(Cancellation::new(), deadline_after(1_000)));
     assert!(!runner.installed.load(Ordering::Acquire));
@@ -1405,6 +1431,49 @@ fn absent_app_installs_snapshot_and_owned_cleanup_uninstalls_exact_app() {
     assert!(requests.iter().any(|request| {
         request.args == ["simctl", "uninstall", UDID, app_id.as_str()].map(OsString::from)
     }));
+}
+
+#[test]
+fn failed_owned_install_identity_proof_never_launches_or_uninstalls() {
+    for container_failure in [true, false] {
+        let artifact = TempArtifact::new("owned-container-failure");
+        let app_id = format!(
+            "com.example.ContainerFailure.{}",
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let runner = FakeRunner::new(&artifact.app, app_id.clone());
+        runner.installed.store(false, Ordering::Release);
+        runner
+            .container_failure
+            .store(container_failure, Ordering::Release);
+        runner
+            .process_table_failure
+            .store(!container_failure, Ordering::Release);
+        let adapter = test_adapter(Arc::clone(&runner), &artifact.app);
+        let error = adapter
+            .begin_launch(
+                selection(&artifact.app, &app_id, [0; 32]),
+                deadline_after(1_000),
+            )
+            .launch(
+                require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![1])),
+                Cancellation::new(),
+                deadline_after(1_000),
+            )
+            .err()
+            .expect("unproven owned installation must fail closed");
+        assert_eq!(error.kind(), PlatformFailureKind::CleanupFailed);
+        assert!(runner.installed.load(Ordering::Acquire));
+        assert_eq!(runner.launch_calls.load(Ordering::Acquire), 0);
+        assert!(
+            !runner
+                .requests
+                .lock()
+                .expect("requests")
+                .iter()
+                .any(|r| r.args.get(1) == Some(&OsString::from("uninstall")))
+        );
+    }
 }
 
 #[test]

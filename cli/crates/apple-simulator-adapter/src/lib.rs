@@ -994,15 +994,6 @@ fn feature_probe(
     {
         return Err(failure(PlatformFailureKind::Unavailable));
     }
-    let spawn = run_success(
-        runner,
-        ToolRequest::plain(runner.program(), ["simctl", "help", "spawn"]),
-        cancellation,
-        deadline,
-    )?;
-    if !strict_help_text(&spawn)?.contains("Spawn a process") {
-        return Err(failure(PlatformFailureKind::Unavailable));
-    }
     for (command, expected) in [
         ("listapps", "Show the installed applications"),
         ("install", "Install an app"),
@@ -1066,12 +1057,18 @@ fn verify_exact_candidate(
             deadline,
         )
         .map_err(|_| failure(PlatformFailureKind::CleanupFailed))?;
-        if !installed_app_present(runner, selection, cancellation, deadline)? {
-            return Err(failure(PlatformFailureKind::CleanupFailed));
-        }
         true
     };
-    let installed = installed_app_path(runner, selection, cancellation, deadline)?;
+    // The exact container and artifact proof below also establish presence;
+    // another full application inventory after install adds no identity proof.
+    let installed =
+        installed_app_path(runner, selection, cancellation, deadline).map_err(|error| {
+            if installed_by_lease {
+                failure(PlatformFailureKind::CleanupFailed)
+            } else {
+                error
+            }
+        })?;
     if artifact_verifier
         .verify_installed(&installed, artifact, selection, cancellation, deadline)
         .is_err()
@@ -1082,7 +1079,15 @@ fn verify_exact_candidate(
             failure(PlatformFailureKind::Rejected)
         });
     }
-    if !matching_processes(runner, &installed, cancellation, deadline)?.is_empty() {
+    let processes =
+        matching_processes(runner, &installed, cancellation, deadline).map_err(|error| {
+            if installed_by_lease {
+                failure(PlatformFailureKind::CleanupFailed)
+            } else {
+                error
+            }
+        })?;
+    if !processes.is_empty() {
         return Err(failure(if installed_by_lease {
             PlatformFailureKind::CleanupFailed
         } else {
