@@ -31,7 +31,11 @@ test("iOS and Android journeys use the installed target-prepare release mode", a
   assert.match(scripts[0], /argv:\s*\[require\("node:path"\)\.join\(prefix, "libexec", "apppilotkit-target-prepare"\), "--release-fd=0", "--output=json"\]/);
   assert.match(scripts[1], /prepare_program=.*\$prefix\/libexec\/apppilotkit-target-prepare/);
   assert.match(scripts[1], /"argv": \["\$prepare_program", "--release-fd=0", "--output=json"\]/);
-  assert.match(scripts[1], /cargo=\$\{cargo:a\}/);
+  assert.match(scripts[1], /rustup_root=\/Volumes\/WD\/Toolchains\/AppPilotKit\/rustup/);
+  assert.match(scripts[1], /export RUSTUP_TOOLCHAIN="\$rust_toolchain"/);
+  assert.match(scripts[1], /export CARGO="\$cargo"/);
+  assert.match(scripts[1], /for rust_target in aarch64-linux-android x86_64-linux-android/);
+  assert.match(scripts[1], /target list --installed --toolchain "\$rust_toolchain"/);
   assert.match(scripts[1], /work_root=\$\(mktemp -d [\s\S]*\)\nwork_root=\$\{work_root:A\}/);
 
   for (const script of scripts) {
