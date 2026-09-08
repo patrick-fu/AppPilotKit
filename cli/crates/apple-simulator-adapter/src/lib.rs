@@ -38,6 +38,41 @@ const REAP_POLL: Duration = Duration::from_millis(5);
 const TERM_GRACE: Duration = Duration::from_millis(250);
 const CLEANUP_BUDGET_MS: u64 = 2_000;
 
+macro_rules! apple_rejected {
+    ($origin:ident) => {{
+        #[cfg(feature = "internal-diagnostics")]
+        {
+            PlatformFailure::apple_simulator_rejected(
+                apppilotkit_host_runtime::adapter::AppleSimulatorRejectedOrigin::$origin,
+            )
+        }
+        #[cfg(not(feature = "internal-diagnostics"))]
+        {
+            failure(PlatformFailureKind::Rejected)
+        }
+    }};
+}
+
+macro_rules! preserve_apple_rejection_origin {
+    ($failure:expr, $origin:ident) => {{
+        let failure = $failure;
+        #[cfg(feature = "internal-diagnostics")]
+        {
+            if failure.primary_kind() == PlatformFailureKind::Rejected {
+                failure.with_apple_simulator_rejection_origin(
+                    apppilotkit_host_runtime::adapter::AppleSimulatorRejectedOrigin::$origin,
+                )
+            } else {
+                failure
+            }
+        }
+        #[cfg(not(feature = "internal-diagnostics"))]
+        {
+            failure
+        }
+    }};
+}
+
 mod artifact;
 
 /// Computes the canonical `ios-app-tree-v1` digest for one selected Simulator
@@ -171,7 +206,7 @@ impl ArtifactVerifier for D0ArtifactVerifier {
                     .identity
                     .build
         {
-            return Err(failure(PlatformFailureKind::Rejected));
+            return Err(apple_rejected!(ArtifactPreparation));
         }
         Ok(())
     }
@@ -356,14 +391,16 @@ impl PendingLaunch for ApplePendingLaunch {
         let preparation = (|| {
             check_cancel_deadline(&cancellation, absolute_deadline)?;
             if descriptor.canonical_bytes().len() > DESCRIPTOR_CAP {
-                return Err(failure(PlatformFailureKind::Rejected));
+                return Err(apple_rejected!(DescriptorOversize));
             }
-            let artifact = self.artifact_verifier.prepare(
-                &self.selection,
-                &cancellation,
-                absolute_deadline,
-            )?;
-            feature_probe(self.runner.as_ref(), &cancellation, absolute_deadline)?;
+            let artifact = self
+                .artifact_verifier
+                .prepare(&self.selection, &cancellation, absolute_deadline)
+                .map_err(|failure| {
+                    preserve_apple_rejection_origin!(failure, ArtifactPreparation)
+                })?;
+            feature_probe(self.runner.as_ref(), &cancellation, absolute_deadline)
+                .map_err(|failure| preserve_apple_rejection_origin!(failure, ToolOutput))?;
             let candidate = verify_exact_candidate(
                 self.runner.as_ref(),
                 self.artifact_verifier.as_ref(),
@@ -371,13 +408,18 @@ impl PendingLaunch for ApplePendingLaunch {
                 &artifact,
                 &cancellation,
                 absolute_deadline,
-            )?;
-            self.artifact_verifier.assert_snapshot_unchanged(
-                &artifact,
-                &self.selection,
-                &cancellation,
-                absolute_deadline,
-            )?;
+            )
+            .map_err(|failure| preserve_apple_rejection_origin!(failure, CandidateVerification))?;
+            self.artifact_verifier
+                .assert_snapshot_unchanged(
+                    &artifact,
+                    &self.selection,
+                    &cancellation,
+                    absolute_deadline,
+                )
+                .map_err(|failure| {
+                    preserve_apple_rejection_origin!(failure, ArtifactPreparation)
+                })?;
             Ok((
                 URL_SAFE_NO_PAD.encode(descriptor.canonical_bytes()),
                 candidate,
@@ -413,17 +455,25 @@ impl PendingLaunch for ApplePendingLaunch {
                     return Err(self.after_uncertain_launch_failure(
                         &candidate,
                         &artifact,
-                        failure(PlatformFailureKind::Rejected),
+                        apple_rejected!(LaunchResult),
                     ));
                 }
                 Err(error) => {
-                    return Err(self.after_uncertain_launch_failure(&candidate, &artifact, error));
+                    return Err(self.after_uncertain_launch_failure(
+                        &candidate,
+                        &artifact,
+                        preserve_apple_rejection_origin!(error, LaunchResult),
+                    ));
                 }
             };
         let pid = match parse_launch_pid(&launched.stdout, self.selection.app_id()) {
             Ok(pid) => pid,
             Err(error) => {
-                return Err(self.after_uncertain_launch_failure(&candidate, &artifact, error));
+                return Err(self.after_uncertain_launch_failure(
+                    &candidate,
+                    &artifact,
+                    preserve_apple_rejection_origin!(error, LaunchPid),
+                ));
             }
         };
         let owner = match prove_exact_owner(
@@ -437,7 +487,11 @@ impl PendingLaunch for ApplePendingLaunch {
         ) {
             Ok(owner) => owner,
             Err(error) => {
-                return Err(self.after_uncertain_launch_failure(&candidate, &artifact, error));
+                return Err(self.after_uncertain_launch_failure(
+                    &candidate,
+                    &artifact,
+                    preserve_apple_rejection_origin!(error, OwnerProof),
+                ));
             }
         };
         if self
@@ -465,7 +519,7 @@ impl PendingLaunch for ApplePendingLaunch {
                     owner: &owner,
                 },
                 self.reservation.as_mut(),
-                failure(PlatformFailureKind::Rejected),
+                apple_rejected!(PostLaunchArtifact),
             ));
         }
 
@@ -531,7 +585,7 @@ impl PendingLaunch for ApplePendingLaunch {
                     owner: &owner,
                 },
                 self.reservation.as_mut(),
-                failure(PlatformFailureKind::Rejected),
+                apple_rejected!(PostLaunchArtifact),
             ));
         }
         let registry = Arc::new(ConnectionRegistry::default());
@@ -869,7 +923,7 @@ fn reserve_dynamic_loopback(
                     target: owned_target,
                     released: false,
                 },
-                target_conflict.then(|| failure(PlatformFailureKind::Rejected)),
+                target_conflict.then(|| apple_rejected!(TargetAlreadyReserved)),
             ));
         }
     }
@@ -886,7 +940,7 @@ fn validate_selection(selection: &TargetSelection) -> Result<(), PlatformFailure
         || selection.artifact_path().as_bytes().contains(&0)
         || selection.app_id().as_bytes().contains(&0)
     {
-        return Err(failure(PlatformFailureKind::Rejected));
+        return Err(apple_rejected!(InvalidSelection));
     }
     Ok(())
 }

@@ -120,21 +120,19 @@ final class RustSupervisorTests: XCTestCase {
         writeToken: targetFinished.writeToken
       )
     )
-    let ready = try feedBytewise(
-      brokerFinished,
-      streamID: sessionStream,
-      supervisor: supervisor
-    )
-    XCTAssertEqual(ready.kind, UInt32(APK_TP_OUTCOME_NEED_INPUT))
 
     let request = Data(
       #"{"jsonrpc":"2.0","id":"open-transport","method":"session.open","params":{"client":{"name":"tests","version":"1"},"protocol":{"major":1,"minMinor":2,"maxMinor":2},"requiredCapabilities":["semantic.catalog"]}}"#.utf8
     )
     let requestFrames = try broker.sessionOpen(request)
-    let application = try feedBytewise(
-      requestFrames,
-      streamID: sessionStream,
-      supervisor: supervisor
+    var coalesced = brokerFinished
+    for frame in requestFrames { coalesced.append(frame) }
+    let application = try supervisor.drive(
+      SupervisorEvent(
+        tag: UInt32(APK_TP_EVENT_STREAM_BYTES),
+        streamID: sessionStream,
+        bytes: coalesced
+      )
     )
     XCTAssertEqual(application.kind, UInt32(APK_TP_OUTCOME_APPLICATION))
     XCTAssertEqual(application.bytes, request)

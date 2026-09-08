@@ -1,0 +1,47 @@
+{
+  "contract_revision": "1",
+  "scenario": {
+    "id": "demo.foundation",
+    "catalog_membership": "not_a_semantic_capability",
+    "seed": {
+      "id": "foundation-v1",
+      "restoration": "A platform reset terminates the exact Acceptance Host Target process. The next successful prepare starts a fresh process at this seed.",
+      "scope": "one Target process"
+    },
+    "resource": {
+      "id": "acceptance.foundation.state",
+      "kind": "resource",
+      "declaration_revision": 1,
+      "input_schema": null,
+      "value_schema": {
+        "id": "schema_demo_foundation_state_v1",
+        "revision": 1,
+        "digest": "sha256:b63382887a98877b06466df4d6aa2a2fd788e89c5c1db39170720fd6c721a08c"
+      },
+      "document": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "app://acceptance.foundation.state/value@1",
+        "type": "object",
+        "required": ["scenario", "seed", "platform"],
+        "properties": {
+          "scenario": { "type": "string", "const": "demo.foundation" },
+          "seed": { "type": "string", "const": "foundation-v1" },
+          "platform": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "public_value": {
+      "scenario": "demo.foundation",
+      "seed": "foundation-v1"
+    },
+    "native_differences": {
+      "ios": {
+        "platform": "ios"
+      },
+      "android": {
+        "platform": "android"
+      }
+    }
+  }
+}

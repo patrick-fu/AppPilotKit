@@ -758,32 +758,61 @@ impl TargetTransport {
                 })
             }
             ChildPhase::AwaitFinished(mut session) => {
-                if frames.len() != 1 {
-                    return Ok(self.child_terminal(
-                        event.stream_id,
-                        CloseReason::SequenceViolation,
-                        None,
-                    ));
-                }
-                if let Err(error) = session.read_finished(&frames[0]) {
+                let (finished, application_frames) =
+                    frames.split_first().ok_or(SupervisorError::Internal)?;
+                if let Err(error) = session.read_finished(finished) {
                     return Ok(self.child_core_error(event.stream_id, error));
                 }
-                child.phase = ChildPhase::AwaitApplication(session);
-                if let Some(timer) = frame_deadline {
-                    if let Some(phase_timer) = child.phase_timer.take() {
-                        self.timers.remove(&phase_timer);
+                let mut application = None;
+                for frame in application_frames {
+                    match session.read_application(frame) {
+                        Ok(Some(bytes)) if application.is_none() => application = Some(bytes),
+                        Ok(Some(_)) => {
+                            return Ok(self.child_terminal(
+                                event.stream_id,
+                                CloseReason::SequenceViolation,
+                                None,
+                            ));
+                        }
+                        Ok(None) => {}
+                        Err(error) => return Ok(self.child_core_error(event.stream_id, error)),
                     }
-                    return Ok(Outcome::new(OutcomeKind::NeedInput)
-                        .stream(event.stream_id)
-                        .deadline(timer, FRAME_DEADLINE_MS));
                 }
-                reset_child_phase_timer(
-                    eligible,
-                    &mut self.next_token,
-                    &mut self.timers,
-                    event.stream_id,
-                    SESSION_IDLE_DEADLINE_MS,
-                )
+                if let Some(bytes) = application {
+                    child.applications = child
+                        .applications
+                        .checked_add(1)
+                        .ok_or(SupervisorError::Internal)?;
+                    child.phase = ChildPhase::AwaitRuntime(session);
+                    let deadline = if child.applications == 1 {
+                        SESSION_OPEN_RESPONSE_DEADLINE_MS
+                    } else {
+                        SESSION_IDLE_DEADLINE_MS
+                    };
+                    if let Some(timer) = frame_deadline {
+                        if let Some(phase_timer) = child.phase_timer.take() {
+                            self.timers.remove(&phase_timer);
+                        }
+                        Ok(Outcome::application(event.stream_id, bytes)
+                            .deadline(timer, FRAME_DEADLINE_MS))
+                    } else {
+                        let timer = replace_child_timer(
+                            eligible,
+                            &mut self.next_token,
+                            &mut self.timers,
+                            event.stream_id,
+                            TimerAction::SessionPhase(event.stream_id),
+                        )?;
+                        Ok(Outcome::application(event.stream_id, bytes).deadline(timer, deadline))
+                    }
+                } else {
+                    child.phase = ChildPhase::AwaitApplication(session);
+                    let outcome = Outcome::new(OutcomeKind::NeedInput).stream(event.stream_id);
+                    Ok(match frame_deadline {
+                        Some(timer) => outcome.deadline(timer, FRAME_DEADLINE_MS),
+                        None => outcome,
+                    })
+                }
             }
             ChildPhase::AwaitApplication(mut session) => {
                 let mut application = None;
@@ -1680,6 +1709,80 @@ mod tests {
         );
         assert_eq!(ready.kind, OutcomeKind::NeedInput);
         broker
+    }
+
+    fn awaiting_peer_finished_session(
+        target: &mut TargetTransport,
+        stream_id: u64,
+        broker_pbs: &ProcessBootstrapSecret,
+        binding: SessionBinding,
+    ) -> BrokerSession {
+        let m1 = drive(target, EventTag::SessionAccepted, stream_id, 0, &[]);
+        let mut broker = BrokerSession::new(binding, broker_pbs).expect("Broker session");
+        let m2 = broker
+            .read_m1_write_m2(m1.bytes.as_deref().expect("M1 bytes"))
+            .expect("M2");
+        drive(
+            target,
+            EventTag::FullWriteCommitted,
+            stream_id,
+            m1.write_token,
+            &[],
+        );
+        let finished = drive(target, EventTag::StreamBytes, stream_id, 0, &m2);
+        broker
+            .read_finished(finished.bytes.as_deref().expect("Target Finished"))
+            .expect("Finished verify");
+        drive(
+            target,
+            EventTag::FullWriteCommitted,
+            stream_id,
+            finished.write_token,
+            &[],
+        );
+        broker
+    }
+
+    #[test]
+    fn await_finished_coalesced_peer_finished_and_application_delivers_application() {
+        let (mut target, _broker_lease, broker_pbs, binding) = bootstrapped();
+        let mut broker = awaiting_peer_finished_session(&mut target, 11, &broker_pbs, binding);
+        let peer_finished = broker.write_finished().expect("Broker Finished");
+        let mut application = broker
+            .write_session_open(b"coalesced session.open")
+            .expect("session.open");
+        assert_eq!(
+            application.len(),
+            1,
+            "small session.open has one outer frame"
+        );
+        let combined = concat_frames(vec![peer_finished, application.remove(0)]);
+
+        let outcome = drive(&mut target, EventTag::StreamBytes, 11, 0, &combined);
+
+        assert_eq!(outcome.kind, OutcomeKind::Application);
+        assert_eq!(
+            outcome.bytes.as_deref(),
+            Some(b"coalesced session.open".as_slice())
+        );
+    }
+
+    #[test]
+    fn await_finished_rejects_a_second_finished_frame() {
+        let (mut target, _broker_lease, broker_pbs, binding) = bootstrapped();
+        let mut broker = awaiting_peer_finished_session(&mut target, 11, &broker_pbs, binding);
+        let finished = broker.write_finished().expect("Broker Finished");
+
+        let terminal = drive(
+            &mut target,
+            EventTag::StreamBytes,
+            11,
+            0,
+            &concat_frames(vec![finished.clone(), finished]),
+        );
+
+        assert_eq!(terminal.kind, OutcomeKind::SessionTerminal);
+        assert_eq!(terminal.close_reason, CloseReason::AuthenticationFailed);
     }
 
     #[test]

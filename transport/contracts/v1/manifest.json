@@ -2,9 +2,9 @@
   "algorithm": "SHA-256",
   "files": [
     {
-      "bytes": 17476,
+      "bytes": 19060,
       "path": "../../../docs/adr/0009-private-broker-bootstrap-and-target-transport.md",
-      "sha256": "19f4efa7bca9de1721bedfbe036bb722804d5003eaee913f09c5ff91c9f75e3b"
+      "sha256": "822b2dc291f65e4a7dc3c1473010bc361ac30ea14cb295696eec4f43c2f74cd7"
     },
     {
       "bytes": 33826,

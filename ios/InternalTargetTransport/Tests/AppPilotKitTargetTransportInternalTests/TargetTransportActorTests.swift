@@ -29,6 +29,82 @@ final class TargetTransportActorTests: XCTestCase {
     try await eventually { sockets.stopCountSnapshot() == 1 }
   }
 
+  func testEarlySessionAcceptedDuringBootstrapAckCompletesAfterLeaseReady() async throws {
+    let broker = try TestBroker()
+    let supervisor = try RustTargetTransportSupervisor(descriptor: broker.descriptor)
+    let sockets = BrokerSocketHost(
+      broker: broker,
+      request: sessionOpenRequest(generation: 0),
+      delaysBootstrapAckSessionAcceptance: true
+    )
+    let transport = AppPilotKitTargetTransport(
+      supervisor: supervisor,
+      sockets: sockets,
+      compositionFactory: { try makeComposition(generation: $0) },
+      initialOutcome: supervisor.initialOutcome
+    )
+
+    try await transport.activate()
+    try await eventually { sockets.responseSnapshot() != nil }
+
+    let response = try XCTUnwrap(sockets.responseSnapshot())
+    let context = try sessionContext(from: response)
+    XCTAssertEqual(
+      (context["generation"] as? NSNumber)?.uint64Value,
+      sockets.processGenerationSnapshot()
+    )
+    XCTAssertEqual(sockets.responseCountSnapshot(), 1)
+    XCTAssertEqual(sockets.closeCountSnapshot(streamID: 2), 0)
+    await transport.stop()
+  }
+
+  func testSessionM2ReceivedBeforeSessionM1WriteCompletionCompletes() async throws {
+    let broker = try TestBroker()
+    let supervisor = try RustTargetTransportSupervisor(descriptor: broker.descriptor)
+    let sockets = BrokerSocketHost(
+      broker: broker,
+      request: sessionOpenRequest(generation: 0),
+      delaysBootstrapAckSessionAcceptance: true,
+      delaysSessionM1WriteCompletionWithEarlyM2: true
+    )
+    let transport = AppPilotKitTargetTransport(
+      supervisor: supervisor,
+      sockets: sockets,
+      compositionFactory: { try makeComposition(generation: $0) },
+      initialOutcome: supervisor.initialOutcome
+    )
+
+    try await transport.activate()
+    try await eventually { sockets.responseSnapshot() != nil }
+
+    XCTAssertEqual(sockets.responseCountSnapshot(), 1)
+    XCTAssertEqual(sockets.closeCountSnapshot(streamID: 2), 0)
+    await transport.stop()
+  }
+
+  func testEarlySessionBytesBeforeBootstrapAckAreDeferredUntilSessionNeedsInput() async throws {
+    let supervisor = ScriptedSupervisor(application: sessionOpenRequest(generation: 42))
+    let sockets = TestSocketHost()
+    let transport = AppPilotKitTargetTransport(
+      supervisor: supervisor,
+      sockets: sockets,
+      compositionFactory: { try makeComposition(generation: $0) },
+      initialOutcome: supervisor.initialOutcome
+    )
+    try await transport.activate()
+    sockets.emit(.accepted(1))
+    try await eventually { sockets.sentTokens == [10] }
+    sockets.emit(.accepted(2))
+    sockets.emit(.received(2, Data([0x01]), end: false, failed: false))
+    sockets.emit(.writeCompleted(1, 10, failed: false))
+
+    try await eventually { sockets.sentTokens == [10, 20] }
+    sockets.emit(.writeCompleted(2, 20, failed: false))
+    try await eventually { sockets.sentTokens == [10, 20, 30] }
+    XCTAssertEqual(supervisor.runtimeResponseCount, 1)
+    await transport.stop()
+  }
+
   func testWriteTokensRuntimeHandoffAndEligibilityAreSerializedOnce() async throws {
     let request = sessionOpenRequest(generation: 42)
     let supervisor = ScriptedSupervisor(application: request)
@@ -443,24 +519,36 @@ private final class TestSocketHost: TargetSocketHosting, @unchecked Sendable {
   func receiveCount(streamID: UInt64) -> Int {
     lock.withLock { receiveRequests.filter { $0 == streamID }.count }
   }
+
 }
 
 private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
   private let lock = NSLock()
   private let broker: TestBroker
   private let request: Data
+  private let delaysBootstrapAckSessionAcceptance: Bool
+  private let delaysSessionM1WriteCompletionWithEarlyM2: Bool
   private var handler: (@Sendable (SocketEvent) -> Void)?
   private var pending: [UInt64: Data] = [:]
   private var outboundStage = 0
   private var openSent = false
+  private var sessionAccepted = false
   private var response: Data?
   private var responseCount = 0
   private var processGeneration: UInt64?
   private var stopCount = 0
+  private var closeCounts: [UInt64: Int] = [:]
 
-  init(broker: TestBroker, request: Data) {
+  init(
+    broker: TestBroker,
+    request: Data,
+    delaysBootstrapAckSessionAcceptance: Bool = false,
+    delaysSessionM1WriteCompletionWithEarlyM2: Bool = false
+  ) {
     self.broker = broker
     self.request = request
+    self.delaysBootstrapAckSessionAcceptance = delaysBootstrapAckSessionAcceptance
+    self.delaysSessionM1WriteCompletionWithEarlyM2 = delaysSessionM1WriteCompletionWithEarlyM2
   }
 
   func start(port: UInt16, handler: @escaping @Sendable (SocketEvent) -> Void) async throws {
@@ -483,7 +571,8 @@ private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
         }
       }
       guard var bytes = pending[streamID], !bytes.isEmpty else {
-        if streamID == 1, outboundStage == 2 {
+        if streamID == 1, outboundStage == 2, !sessionAccepted {
+          sessionAccepted = true
           return (handler, .accepted(2))
         }
         return nil
@@ -496,8 +585,8 @@ private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
   }
 
   func send(streamID: UInt64, writeToken: UInt64, bytes: Data) {
-    let action: (@Sendable (SocketEvent) -> Void, SocketEvent)? = lock.withLock {
-      guard let handler else { return nil }
+    let actions: [(@Sendable (SocketEvent) -> Void, SocketEvent)] = lock.withLock {
+      guard let handler else { return [] }
       do {
         outboundStage += 1
         switch outboundStage {
@@ -505,8 +594,25 @@ private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
           pending[streamID] = try broker.bootstrapM1(bytes)
         case 2:
           try broker.bootstrapAck(bytes)
+          if delaysBootstrapAckSessionAcceptance {
+            sessionAccepted = true
+            return [
+              (handler, .accepted(2)),
+              (handler, .writeCompleted(streamID, writeToken, failed: false)),
+            ]
+          }
         case 3:
           pending[streamID] = try broker.sessionM1(bytes)
+          if delaysSessionM1WriteCompletionWithEarlyM2,
+            var earlyM2 = pending[streamID], !earlyM2.isEmpty
+          {
+            let byte = earlyM2.removeFirst()
+            pending[streamID] = earlyM2
+            return [
+              (handler, .received(streamID, Data([byte]), end: false, failed: false)),
+              (handler, .writeCompleted(streamID, writeToken, failed: false)),
+            ]
+          }
         case 4:
           pending[streamID] = try broker.targetFinished(bytes)
         case 5:
@@ -519,18 +625,21 @@ private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
             processGeneration = (context["generation"] as? NSNumber)?.uint64Value
           }
         default:
-          return (handler, .writeCompleted(streamID, writeToken, failed: true))
+          return [(handler, .writeCompleted(streamID, writeToken, failed: true))]
         }
-        return (handler, .writeCompleted(streamID, writeToken, failed: false))
+        return [(handler, .writeCompleted(streamID, writeToken, failed: false))]
       } catch {
-        return (handler, .writeCompleted(streamID, writeToken, failed: true))
+        return [(handler, .writeCompleted(streamID, writeToken, failed: true))]
       }
     }
-    if let action { action.0(action.1) }
+    for action in actions { action.0(action.1) }
   }
 
   func close(streamID: UInt64) {
-    lock.withLock { _ = pending.removeValue(forKey: streamID) }
+    lock.withLock {
+      closeCounts[streamID, default: 0] += 1
+      _ = pending.removeValue(forKey: streamID)
+    }
   }
 
   func stop() {
@@ -545,6 +654,7 @@ private final class BrokerSocketHost: TargetSocketHosting, @unchecked Sendable {
   func responseCountSnapshot() -> Int { lock.withLock { responseCount } }
   func processGenerationSnapshot() -> UInt64? { lock.withLock { processGeneration } }
   func stopCountSnapshot() -> Int { lock.withLock { stopCount } }
+  func closeCountSnapshot(streamID: UInt64) -> Int { lock.withLock { closeCounts[streamID, default: 0] } }
 }
 
 private struct TestEvidence: ActionEvidencePort {

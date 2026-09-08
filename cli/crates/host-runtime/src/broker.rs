@@ -26,7 +26,7 @@ use std::{
     fs::File,
     io::Read,
     sync::{
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -339,7 +339,58 @@ struct Lease {
     terminal_reason: Option<CloseReason>,
     terminal_handoff: HandoffState,
     handoff: HandoffState,
+    ready_probe: Arc<ReadyProbe>,
     operations: Arc<LeaseOperations>,
+}
+
+struct ReadyProbe {
+    active: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl ReadyProbe {
+    fn new() -> Self {
+        Self {
+            active: Mutex::new(false),
+            changed: Condvar::new(),
+        }
+    }
+
+    fn enter_until(self: &Arc<Self>, deadline: u64) -> Result<ReadyProbeGuard, ControlFailure> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| fail(ErrorStage::Prepare, CloseReason::InternalError))?;
+        while *active {
+            let current = now()?;
+            if current >= deadline {
+                return Err(fail(ErrorStage::Prepare, CloseReason::Timeout));
+            }
+            let timeout = Duration::from_millis(deadline.saturating_sub(current));
+            let (next, _) = self
+                .changed
+                .wait_timeout(active, timeout)
+                .map_err(|_| fail(ErrorStage::Prepare, CloseReason::InternalError))?;
+            active = next;
+        }
+        *active = true;
+        Ok(ReadyProbeGuard {
+            probe: Arc::clone(self),
+        })
+    }
+}
+
+struct ReadyProbeGuard {
+    probe: Arc<ReadyProbe>,
+}
+
+impl Drop for ReadyProbeGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.probe.active.lock() {
+            *active = false;
+            self.probe.changed.notify_all();
+        }
+    }
 }
 struct Core {
     // Slots never move while an I/O worker holds an index. A terminal reap
@@ -376,6 +427,10 @@ struct Reservation {
     adapter: Arc<dyn PlatformTargetAdapter>,
     launch_cancel: Cancellation,
     _operation: LeaseOperation,
+}
+enum PrepareRoute {
+    Reuse(usize),
+    Launch(Box<Reservation>),
 }
 struct Prepared {
     success: BootstrapSuccess,
@@ -582,12 +637,13 @@ impl SessionBroker {
         let launch_cancel = Cancellation::new();
         let deadline = prepare_deadline(started, request.deadline_unix_ms, request.body.platform)?;
         let launch_deadline = launch_deadline(started, deadline, request.body.platform)?;
-        let reservation = {
+        let prepare_key = PrepareKey::new(&request.body);
+        let route = {
             let mut core = self
                 .inner
                 .lock()
                 .map_err(|_| fail(ErrorStage::Ipc, CloseReason::InternalError))?;
-            let key = PrepareKey::new(&request.body);
+            let key = prepare_key.clone();
             let selection = key.selection();
             if core.leases.iter().any(|lease| {
                 lease.as_ref().is_some_and(|lease| {
@@ -636,103 +692,143 @@ impl SessionBroker {
                     self.terminalize_lease(index, reason)?;
                     return Err(fail(ErrorStage::Prepare, reason));
                 }
-                return mint(&mut core, index, started);
-            }
-            if core.leases.iter().any(|lease| {
+                PrepareRoute::Reuse(index)
+            } else if core.leases.iter().any(|lease| {
                 lease
                     .as_ref()
                     .is_some_and(|lease| lease.key == key && lease.state == LeaseState::Preparing)
             }) {
                 return Err(fail(ErrorStage::Prepare, CloseReason::BindingMismatch));
-            }
-            if let Some(reason) = core.leases.iter().find_map(|lease| {
+            } else if let Some(reason) = core.leases.iter().find_map(|lease| {
                 lease.as_ref().and_then(|lease| {
                     (lease.key == key && lease.state != LeaseState::Ready)
                         .then_some(lease.terminal_reason.unwrap_or(CloseReason::Stale))
                 })
             }) {
                 return Err(fail(ErrorStage::Prepare, reason));
+            } else {
+                let token = random::<32>(&mut core.entropy)?;
+                let lease_id = random::<16>(&mut core.entropy)?;
+                let nonce = random::<32>(&mut core.entropy)?;
+                let digest =
+                    Sha256::digest(ReadyReference::from_token(token).to_string().as_bytes()).into();
+                let keypair = BrokerStaticKeypair::generate()
+                    .map_err(|e| fail(ErrorStage::Bootstrap, e.close_reason()))?;
+                let public = keypair.public_key();
+                let pbs = ProcessBootstrapSecret::generate()
+                    .map_err(|e| fail(ErrorStage::Bootstrap, e.close_reason()))?;
+                let adapter = match request.body.platform {
+                    Platform::IosSimulator => Arc::clone(&core.ios),
+                    Platform::AndroidEmulator => Arc::clone(&core.android),
+                };
+                let mut references = HashMap::new();
+                references.insert(
+                    token,
+                    Reference {
+                        state: RefState::Pending,
+                        issued: 0,
+                        expires: deadline,
+                        session_slot: None,
+                        session_id: None,
+                    },
+                );
+                core.leases.push(Some(Lease {
+                    key: key.clone(),
+                    state: LeaseState::Preparing,
+                    lease_id,
+                    generation: 0,
+                    epoch: 0,
+                    nk_hash: [0; 32],
+                    pbs: None,
+                    control: None,
+                    lease_crypto: None,
+                    control_reader: None,
+                    connector: None,
+                    cleanup: None,
+                    _adapter: Arc::clone(&adapter),
+                    references,
+                    sessions: HashMap::new(),
+                    next_session: 1,
+                    created: started,
+                    last_heartbeat_attempt: started,
+                    last_heartbeat_success: started,
+                    heartbeat_counter: 1,
+                    heartbeat_misses: 0,
+                    last_client_activity: started,
+                    terminal_cleanup_failed: false,
+                    terminal_reason: None,
+                    terminal_handoff: HandoffState::NotHandedOff,
+                    handoff: HandoffState::NotHandedOff,
+                    ready_probe: Arc::new(ReadyProbe::new()),
+                    operations: Arc::new(LeaseOperations::new()),
+                }));
+                let operation = core
+                    .leases
+                    .last()
+                    .expect("inserted lease")
+                    .as_ref()
+                    .expect("inserted lease")
+                    .operations
+                    .enter(launch_cancel.clone())
+                    .map_err(|reason| fail(ErrorStage::Prepare, reason))?;
+                PrepareRoute::Launch(Box::new(Reservation {
+                    index: core.leases.len() - 1,
+                    key,
+                    body: request.body.clone(),
+                    token,
+                    digest,
+                    lease_id,
+                    nonce,
+                    private: keypair.into_private_key(),
+                    public,
+                    pbs,
+                    deadline,
+                    launch_deadline,
+                    adapter,
+                    launch_cancel,
+                    _operation: operation,
+                }))
             }
-            let token = random::<32>(&mut core.entropy)?;
-            let lease_id = random::<16>(&mut core.entropy)?;
-            let nonce = random::<32>(&mut core.entropy)?;
-            let digest =
-                Sha256::digest(ReadyReference::from_token(token).to_string().as_bytes()).into();
-            let keypair = BrokerStaticKeypair::generate()
-                .map_err(|e| fail(ErrorStage::Bootstrap, e.close_reason()))?;
-            let public = keypair.public_key();
-            let pbs = ProcessBootstrapSecret::generate()
-                .map_err(|e| fail(ErrorStage::Bootstrap, e.close_reason()))?;
-            let adapter = match request.body.platform {
-                Platform::IosSimulator => Arc::clone(&core.ios),
-                Platform::AndroidEmulator => Arc::clone(&core.android),
-            };
-            let mut references = HashMap::new();
-            references.insert(
-                token,
-                Reference {
-                    state: RefState::Pending,
-                    issued: 0,
-                    expires: deadline,
-                    session_slot: None,
-                    session_id: None,
-                },
-            );
-            core.leases.push(Some(Lease {
-                key: key.clone(),
-                state: LeaseState::Preparing,
-                lease_id,
-                generation: 0,
-                epoch: 0,
-                nk_hash: [0; 32],
-                pbs: None,
-                control: None,
-                lease_crypto: None,
-                control_reader: None,
-                connector: None,
-                cleanup: None,
-                _adapter: Arc::clone(&adapter),
-                references,
-                sessions: HashMap::new(),
-                next_session: 1,
-                created: started,
-                last_heartbeat_attempt: started,
-                last_heartbeat_success: started,
-                heartbeat_counter: 1,
-                heartbeat_misses: 0,
-                last_client_activity: started,
-                terminal_cleanup_failed: false,
-                terminal_reason: None,
-                terminal_handoff: HandoffState::NotHandedOff,
-                handoff: HandoffState::NotHandedOff,
-                operations: Arc::new(LeaseOperations::new()),
-            }));
-            let operation = core
-                .leases
-                .last()
-                .expect("inserted lease")
-                .as_ref()
-                .expect("inserted lease")
-                .operations
-                .enter(launch_cancel.clone())
-                .map_err(|reason| fail(ErrorStage::Prepare, reason))?;
-            Reservation {
-                index: core.leases.len() - 1,
-                key,
-                body: request.body,
-                token,
-                digest,
-                lease_id,
-                nonce,
-                private: keypair.into_private_key(),
-                public,
-                pbs,
-                deadline,
-                launch_deadline,
-                adapter,
-                launch_cancel,
-                _operation: operation,
-            }
+        };
+        let reservation = match route {
+            PrepareRoute::Launch(reservation) => *reservation,
+            PrepareRoute::Reuse(index) => match self.heartbeat(index, deadline) {
+                Ok(true) => {
+                    let current = self.clock.now()?;
+                    if current >= deadline {
+                        return Err(fail(ErrorStage::Prepare, CloseReason::Timeout));
+                    }
+                    let mut core = self
+                        .inner
+                        .lock()
+                        .map_err(|_| fail(ErrorStage::Ipc, CloseReason::InternalError))?;
+                    let Some(lease) = core
+                        .leases
+                        .get(index)
+                        .and_then(Option::as_ref)
+                        .filter(|lease| lease.key == prepare_key)
+                    else {
+                        return Err(fail(ErrorStage::Prepare, CloseReason::Stale));
+                    };
+                    if lease.state != LeaseState::Ready {
+                        return Err(fail(ErrorStage::Prepare, CloseReason::Stale));
+                    }
+                    if let Some(reason) = lease_terminal_reason(
+                        current,
+                        lease.created,
+                        lease.last_client_activity,
+                        lease.heartbeat_misses,
+                        lease.last_heartbeat_success,
+                    ) {
+                        drop(core);
+                        self.terminalize_lease(index, reason)?;
+                        return Err(fail(ErrorStage::Prepare, reason));
+                    }
+                    return mint(&mut core, index, current);
+                }
+                Ok(false) => return Err(fail(ErrorStage::Prepare, CloseReason::Timeout)),
+                Err(error) => return Err(error),
+            },
         };
         let completion = CompletionReservation {
             index: reservation.index,
@@ -854,7 +950,8 @@ impl SessionBroker {
                     let failure = platform_launch_failure(failure);
                     #[cfg(feature = "internal-diagnostics")]
                     if timed_out {
-                        return failure.with_bootstrap_origin(BootstrapFailureOrigin::PrepareLaunchTimeout);
+                        return failure
+                            .with_bootstrap_origin(BootstrapFailureOrigin::PrepareLaunchTimeout);
                     }
                     failure
                 })
@@ -903,10 +1000,9 @@ impl SessionBroker {
                 reservation.launch_cancel.cancel();
                 let failure = self.reject(completion, CloseReason::Timeout);
                 #[cfg(feature = "internal-diagnostics")]
-                return failure.map_err(|failure| mark_bootstrap_origin(
-                    failure,
-                    BootstrapFailureOrigin::PrepareWaitTimeout,
-                ));
+                return failure.map_err(|failure| {
+                    mark_bootstrap_origin(failure, BootstrapFailureOrigin::PrepareWaitTimeout)
+                });
                 #[cfg(not(feature = "internal-diagnostics"))]
                 failure
             }
@@ -915,7 +1011,7 @@ impl SessionBroker {
     fn commit(
         &self,
         reservation: CompletionReservation,
-        prepared: Prepared,
+        mut prepared: Prepared,
     ) -> Result<ControlSuccess, ControlFailure> {
         let completed = self.clock.now()?;
         let binding_matches = prepared.success.ack.lease_id == reservation.lease_id
@@ -924,6 +1020,25 @@ impl SessionBroker {
         if let Some(reason) =
             commit_rejection_reason(completed, reservation.deadline, binding_matches)
         {
+            #[cfg(feature = "internal-diagnostics")]
+            if let Some(origin) = commit_rejection_origin(reason) {
+                return self
+                    .discard_prepared(reservation, prepared, reason)
+                    .map_err(|failure| mark_bootstrap_origin(failure, origin));
+            }
+            return self.discard_prepared(reservation, prepared, reason);
+        }
+        if let Err(error) = raw_transport::heartbeat(
+            prepared.success.bootstrap.as_ref(),
+            &mut prepared.success.reader,
+            &mut prepared.success.lease,
+            1,
+            abs(reservation.deadline)?,
+        ) {
+            return self.discard_prepared_transport(reservation, prepared, error);
+        }
+        let completed = self.clock.now()?;
+        if let Some(reason) = commit_rejection_reason(completed, reservation.deadline, true) {
             #[cfg(feature = "internal-diagnostics")]
             if let Some(origin) = commit_rejection_origin(reason) {
                 return self
@@ -978,6 +1093,7 @@ impl SessionBroker {
         lease.created = completed;
         lease.last_heartbeat_attempt = completed;
         lease.last_heartbeat_success = completed;
+        lease.heartbeat_counter = 2;
         Ok(ControlSuccess::TargetReady(ReadyTarget {
             target_token: reservation.token,
             process_generation: lease.generation,
@@ -1018,6 +1134,25 @@ impl SessionBroker {
         // terminal reaping observes that sticky result rather than success.
         drop(operation);
         result
+    }
+
+    fn discard_prepared_transport(
+        &self,
+        reservation: CompletionReservation,
+        prepared: Prepared,
+        error: TransportFailure,
+    ) -> Result<ControlSuccess, ControlFailure> {
+        match self.discard_prepared(reservation, prepared, error.close_reason) {
+            Err(mut failure) => {
+                failure.handoff = error.handoff;
+                #[cfg(feature = "internal-diagnostics")]
+                if let Some(origin) = error.bootstrap_origin {
+                    failure = mark_bootstrap_origin(failure, origin);
+                }
+                Err(failure)
+            }
+            Ok(_) => unreachable!("prepared transport rejection cannot succeed"),
+        }
     }
     fn reject(
         &self,
@@ -1839,7 +1974,18 @@ impl SessionBroker {
         Ok(())
     }
 
-    fn heartbeat(&self, index: usize, deadline_ms: u64) -> Result<(), ControlFailure> {
+    fn heartbeat(&self, index: usize, deadline_ms: u64) -> Result<bool, ControlFailure> {
+        let ready_probe = self
+            .inner
+            .lock()
+            .map_err(|_| fail(ErrorStage::Ipc, CloseReason::InternalError))?
+            .leases
+            .get(index)
+            .and_then(Option::as_ref)
+            .filter(|lease| lease.state == LeaseState::Ready)
+            .map(|lease| Arc::clone(&lease.ready_probe))
+            .ok_or_else(|| fail(ErrorStage::Close, CloseReason::Stale))?;
+        let _probe = ready_probe.enter_until(deadline_ms)?;
         let (raw, mut reader, mut crypto, counter, misses, deadline, operation) = {
             let mut core = self
                 .inner
@@ -1971,7 +2117,7 @@ impl SessionBroker {
             lease.heartbeat_counter = counter
                 .checked_add(1)
                 .ok_or_else(|| fail(ErrorStage::Close, CloseReason::InternalError))?;
-            Ok(())
+            Ok(true)
         } else {
             if lease.state != LeaseState::Ready {
                 return Err(fail(ErrorStage::Close, CloseReason::Stale));
@@ -1994,7 +2140,7 @@ impl SessionBroker {
                 let _ = self.terminalize_lease(index, CloseReason::BrokerLost);
                 return Err(fail(ErrorStage::Close, CloseReason::BrokerLost));
             }
-            Ok(())
+            Ok(false)
         }
     }
 }
@@ -2318,6 +2464,7 @@ fn mark_bootstrap_origin(
 ) -> ControlFailure {
     failure.message = match origin {
         BootstrapFailureOrigin::AdapterRejected => INTERNAL_BOOTSTRAP_ADAPTER_REJECTED,
+        BootstrapFailureOrigin::AppleSimulatorRejected(origin) => origin.reason_code(),
         BootstrapFailureOrigin::AckBindingMismatch => INTERNAL_BOOTSTRAP_ACK_BINDING_MISMATCH,
         BootstrapFailureOrigin::BootstrapIoTimeout => INTERNAL_BOOTSTRAP_IO_TIMEOUT,
         BootstrapFailureOrigin::PrepareLaunchTimeout => INTERNAL_PREPARE_LAUNCH_TIMEOUT,
@@ -2359,11 +2506,12 @@ fn platform_launch_failure(failure: PlatformFailure) -> TransportFailure {
         handoff: HandoffState::NotHandedOff,
         cleanup_failed: failure.cleanup_failed(),
         #[cfg(feature = "internal-diagnostics")]
-        bootstrap_origin: if failure.primary_kind() == PlatformFailureKind::Rejected {
-            Some(BootstrapFailureOrigin::AdapterRejected)
-        } else {
-            None
-        },
+        bootstrap_origin: (failure.primary_kind() == PlatformFailureKind::Rejected).then(|| {
+            failure.apple_simulator_rejection_origin().map_or(
+                BootstrapFailureOrigin::AdapterRejected,
+                BootstrapFailureOrigin::AppleSimulatorRejected,
+            )
+        }),
         #[cfg(feature = "internal-diagnostics")]
         session_origin: None,
     }
@@ -2372,6 +2520,8 @@ fn platform_launch_failure(failure: PlatformFailure) -> TransportFailure {
 #[cfg(test)]
 mod platform_launch_failure_tests {
     use super::*;
+    #[cfg(feature = "internal-diagnostics")]
+    use crate::adapter::AppleSimulatorRejectedOrigin;
 
     #[test]
     fn cleanup_failure_preserves_primary_close_reason_for_host_decisions() {
@@ -2392,6 +2542,32 @@ mod platform_launch_failure_tests {
             .bootstrap_origin,
             Some(BootstrapFailureOrigin::AdapterRejected)
         );
+        for origin in [
+            AppleSimulatorRejectedOrigin::InvalidSelection,
+            AppleSimulatorRejectedOrigin::TargetAlreadyReserved,
+            AppleSimulatorRejectedOrigin::DescriptorOversize,
+            AppleSimulatorRejectedOrigin::ArtifactPreparation,
+            AppleSimulatorRejectedOrigin::ToolOutput,
+            AppleSimulatorRejectedOrigin::CandidateVerification,
+            AppleSimulatorRejectedOrigin::LaunchResult,
+            AppleSimulatorRejectedOrigin::LaunchPid,
+            AppleSimulatorRejectedOrigin::OwnerProof,
+            AppleSimulatorRejectedOrigin::PostLaunchArtifact,
+        ] {
+            let failure =
+                platform_launch_failure(PlatformFailure::apple_simulator_rejected(origin));
+            assert_eq!(
+                failure.bootstrap_origin,
+                Some(BootstrapFailureOrigin::AppleSimulatorRejected(origin))
+            );
+            let marked = mark_bootstrap_origin(
+                fail(ErrorStage::Bootstrap, CloseReason::BindingMismatch),
+                failure
+                    .bootstrap_origin
+                    .expect("typed Apple rejection origin"),
+            );
+            assert_eq!(marked.message, origin.reason_code());
+        }
         assert_eq!(
             commit_rejection_origin(CloseReason::BindingMismatch),
             Some(BootstrapFailureOrigin::AckBindingMismatch)
@@ -2753,6 +2929,28 @@ mod lifecycle_tests {
         incoming: Mutex<VecDeque<u8>>,
         writes: AtomicUsize,
     }
+
+    struct DeadlineReplyingHeartbeatRaw {
+        target: Mutex<apppilotkit_transport_crypto_core::TargetLeaseConnection>,
+        incoming: Mutex<VecDeque<u8>>,
+        clock: Arc<TestClock>,
+        advance_to: u64,
+    }
+
+    struct BlockingReplyingHeartbeatRaw {
+        target: Mutex<apppilotkit_transport_crypto_core::TargetLeaseConnection>,
+        incoming: Mutex<VecDeque<u8>>,
+        started: Arc<Barrier>,
+        release: Arc<Barrier>,
+        blocks_once: AtomicUsize,
+    }
+
+    struct DeferredHeartbeatRaw {
+        target: Mutex<Option<apppilotkit_transport_crypto_core::TargetLeaseConnection>>,
+        incoming: Mutex<VecDeque<u8>>,
+        corrupt_reply: bool,
+        writes: AtomicUsize,
+    }
     impl RawDuplex for ReplyingHeartbeatRaw {
         fn read(
             &self,
@@ -2778,6 +2976,111 @@ mod lifecycle_tests {
                 let reply = target
                     .write_heartbeat_reply(counter)
                     .expect("real C1 heartbeat reply");
+                self.incoming.lock().expect("heartbeat input").extend(reply);
+            }
+            Ok(input.len())
+        }
+
+        fn cancel(&self) {}
+    }
+    impl RawDuplex for DeadlineReplyingHeartbeatRaw {
+        fn read(
+            &self,
+            output: &mut [u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            self.clock.0.store(self.advance_to, Ordering::SeqCst);
+            let mut incoming = self.incoming.lock().expect("heartbeat input");
+            let count = output.len().min(incoming.len());
+            for byte in &mut output[..count] {
+                *byte = incoming.pop_front().expect("bounded heartbeat input");
+            }
+            Ok(count)
+        }
+
+        fn write(
+            &self,
+            input: &[u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut target = self.target.lock().expect("target lease");
+            if let Ok(counter) = target.read_heartbeat_request(input) {
+                let reply = target
+                    .write_heartbeat_reply(counter)
+                    .expect("real C1 heartbeat reply");
+                self.incoming.lock().expect("heartbeat input").extend(reply);
+            }
+            Ok(input.len())
+        }
+
+        fn cancel(&self) {}
+    }
+    impl RawDuplex for BlockingReplyingHeartbeatRaw {
+        fn read(
+            &self,
+            output: &mut [u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut incoming = self.incoming.lock().expect("heartbeat input");
+            let count = output.len().min(incoming.len());
+            for byte in &mut output[..count] {
+                *byte = incoming.pop_front().expect("bounded heartbeat input");
+            }
+            Ok(count)
+        }
+
+        fn write(
+            &self,
+            input: &[u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut target = self.target.lock().expect("target lease");
+            if let Ok(counter) = target.read_heartbeat_request(input) {
+                if self.blocks_once.fetch_add(1, Ordering::SeqCst) == 0 {
+                    self.started.wait();
+                    self.release.wait();
+                }
+                let reply = target
+                    .write_heartbeat_reply(counter)
+                    .expect("real C1 heartbeat reply");
+                self.incoming.lock().expect("heartbeat input").extend(reply);
+            }
+            Ok(input.len())
+        }
+
+        fn cancel(&self) {}
+    }
+    impl RawDuplex for DeferredHeartbeatRaw {
+        fn read(
+            &self,
+            output: &mut [u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            let mut incoming = self.incoming.lock().expect("heartbeat input");
+            let count = output.len().min(incoming.len());
+            for byte in &mut output[..count] {
+                *byte = incoming.pop_front().expect("bounded heartbeat input");
+            }
+            Ok(count)
+        }
+
+        fn write(
+            &self,
+            input: &[u8],
+            _: AbsoluteDeadline,
+        ) -> Result<usize, crate::adapter::PlatformFailure> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            let mut target = self.target.lock().expect("target lease");
+            let target = target
+                .as_mut()
+                .expect("test installs target lease before commit");
+            if let Ok(counter) = target.read_heartbeat_request(input) {
+                let mut reply = target
+                    .write_heartbeat_reply(counter)
+                    .expect("real C1 heartbeat reply");
+                if self.corrupt_reply {
+                    *reply.last_mut().expect("nonempty C1 frame") ^= 1;
+                }
                 self.incoming.lock().expect("heartbeat input").extend(reply);
             }
             Ok(input.len())
@@ -2909,6 +3212,118 @@ mod lifecycle_tests {
         (broker_lease, target_lease)
     }
 
+    fn prepared_with_real_lease(
+        binding: BootstrapBinding,
+        raw: Arc<dyn RawDuplex>,
+        cleanup: Box<dyn CleanupReceipt>,
+        operations: &Arc<LeaseOperations>,
+    ) -> (
+        Prepared,
+        apppilotkit_transport_crypto_core::TargetLeaseConnection,
+    ) {
+        let keypair = BrokerStaticKeypair::generate().expect("broker keypair");
+        let mut target =
+            TargetBootstrap::new(binding.clone(), keypair.public_key()).expect("target bootstrap");
+        let pbs = ProcessBootstrapSecret::generate().expect("bootstrap secret");
+        let broker = BrokerBootstrap::new(binding, keypair.into_private_key(), &pbs)
+            .expect("broker bootstrap");
+        let m1 = target.write_m1().expect("target M1");
+        let (m2, receiver) = broker.read_m1_write_m2(&m1).expect("broker M2");
+        let (sender, _) = target.read_m2(&m2, 7, 1).expect("target reads M2");
+        let (ack_outer, target_lease) = sender.write_ack().expect("target ACK");
+        let (ack, broker_lease) = receiver.read_ack(&ack_outer).expect("broker reads ACK");
+        (
+            Prepared {
+                success: BootstrapSuccess {
+                    ack,
+                    lease: broker_lease,
+                    bootstrap: raw,
+                    connector: Arc::new(CountingConnector(Arc::new(AtomicUsize::new(0)))),
+                    cleanup,
+                    reader: raw_transport::RawFrameReader::new(),
+                },
+                pbs,
+                operation: operations
+                    .enter(Cancellation::new())
+                    .expect("prepared operation"),
+            },
+            target_lease,
+        )
+    }
+
+    fn ready_proof_reservation(
+        broker: &SessionBroker,
+        operations: &Arc<LeaseOperations>,
+    ) -> (CompletionReservation, BootstrapBinding) {
+        let key = PrepareKey {
+            platform: Platform::IosSimulator,
+            device: "device".into(),
+            app: "app".into(),
+            digest: [0x61; 32],
+        };
+        let token = [0x62; 32];
+        let lease_id = [0x63; 16];
+        let deadline = now().expect("system clock") + 10_000;
+        let adapter: Arc<dyn PlatformTargetAdapter> = Arc::new(NeverAdapter);
+        let lease = Lease {
+            key: key.clone(),
+            state: LeaseState::Preparing,
+            lease_id,
+            generation: 0,
+            epoch: 0,
+            nk_hash: [0; 32],
+            pbs: None,
+            control: None,
+            lease_crypto: None,
+            control_reader: None,
+            connector: None,
+            cleanup: None,
+            _adapter: adapter,
+            references: HashMap::from([(
+                token,
+                Reference {
+                    state: RefState::Pending,
+                    issued: 0,
+                    expires: deadline,
+                    session_slot: None,
+                    session_id: None,
+                },
+            )]),
+            sessions: HashMap::new(),
+            next_session: 1,
+            created: 0,
+            last_heartbeat_attempt: 0,
+            last_heartbeat_success: 0,
+            heartbeat_counter: 1,
+            heartbeat_misses: 0,
+            last_client_activity: 0,
+            terminal_cleanup_failed: false,
+            terminal_reason: None,
+            terminal_handoff: HandoffState::NotHandedOff,
+            handoff: HandoffState::NotHandedOff,
+            ready_probe: Arc::new(ReadyProbe::new()),
+            operations: Arc::clone(operations),
+        };
+        broker.inner.lock().expect("test core").leases[0] = Some(lease);
+        (
+            CompletionReservation {
+                index: 0,
+                key: key.clone(),
+                token,
+                digest: key.digest,
+                lease_id,
+                deadline,
+            },
+            BootstrapBinding {
+                target_reference_digest: key.digest,
+                lease_id,
+                target_nonce: [0x64; 32],
+                app_artifact_digest: [0x65; 32],
+                expiry_ms: deadline,
+            },
+        )
+    }
+
     fn real_session_connections(binding: SessionBinding) -> (BrokerSession, TargetSession) {
         let pbs = ProcessBootstrapSecret::generate().expect("bootstrap secret");
         let mut target = TargetSession::new(binding.clone(), &pbs).expect("target session");
@@ -2979,6 +3394,7 @@ mod lifecycle_tests {
             terminal_reason: None,
             terminal_handoff: HandoffState::NotHandedOff,
             handoff: HandoffState::NotHandedOff,
+            ready_probe: Arc::new(ReadyProbe::new()),
             operations: Arc::clone(&operations),
         };
         let clock = Arc::new(TestClock(AtomicU64::new(1)));
@@ -3076,6 +3492,187 @@ mod lifecycle_tests {
         );
     }
 
+    #[test]
+    fn ready_reference_requires_an_authenticated_initial_heartbeat_reply() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, operations, _) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let (reservation, binding) = ready_proof_reservation(&broker, &operations);
+        let deadline = reservation.deadline;
+        let raw = Arc::new(MissingHeartbeatRaw {
+            writes: Mutex::new(Vec::new()),
+            reads: AtomicUsize::new(0),
+            deadlines: Mutex::new(Vec::new()),
+        });
+        let (prepared, mut target_lease) = prepared_with_real_lease(
+            binding,
+            Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            Box::new(CountCleanup(Arc::clone(&cleanup_calls))),
+            &operations,
+        );
+
+        let failure = broker
+            .commit(reservation, prepared)
+            .expect_err("an ACK alone must not mint a Ready Reference");
+
+        assert_eq!(failure.stage, ErrorStage::Bootstrap);
+        assert_eq!(failure.close_reason, CloseReason::Timeout);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        let writes = raw.writes.lock().expect("initial heartbeat write");
+        assert_eq!(writes.len(), 1);
+        assert_eq!(
+            target_lease
+                .read_heartbeat_request(&writes[0])
+                .expect("authenticated initial heartbeat"),
+            1
+        );
+        assert_eq!(
+            *raw.deadlines.lock().expect("initial heartbeat deadline"),
+            vec![deadline],
+            "the ready proof consumes the existing bootstrap deadline"
+        );
+        let core = broker.inner.lock().expect("rejected ready state");
+        let lease = core.leases[0]
+            .as_ref()
+            .expect("rejected lease retained for reaping");
+        assert!(lease.state == LeaseState::Stale);
+        assert!(
+            lease.references.is_empty(),
+            "no half-ready reference remains"
+        );
+    }
+
+    #[test]
+    fn initial_heartbeat_authentication_failure_rejects_before_ready() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, operations, _) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let (reservation, binding) = ready_proof_reservation(&broker, &operations);
+        let raw = Arc::new(DeferredHeartbeatRaw {
+            target: Mutex::new(None),
+            incoming: Mutex::new(VecDeque::new()),
+            corrupt_reply: true,
+            writes: AtomicUsize::new(0),
+        });
+        let (prepared, target_lease) = prepared_with_real_lease(
+            binding,
+            Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            Box::new(CountCleanup(Arc::clone(&cleanup_calls))),
+            &operations,
+        );
+        *raw.target.lock().expect("test target lease") = Some(target_lease);
+
+        let failure = broker
+            .commit(reservation, prepared)
+            .expect_err("a forged initial heartbeat reply must not become ready");
+
+        assert_eq!(failure.stage, ErrorStage::Bootstrap);
+        assert_eq!(failure.close_reason, CloseReason::AuthenticationFailed);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        let core = broker.inner.lock().expect("rejected ready state");
+        assert!(core.leases[0].as_ref().expect("lease").state == LeaseState::Stale);
+    }
+
+    #[test]
+    fn initial_heartbeat_timeout_keeps_a_failed_cleanup_tombstone() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, operations, _) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let (reservation, binding) = ready_proof_reservation(&broker, &operations);
+        let raw = Arc::new(MissingHeartbeatRaw {
+            writes: Mutex::new(Vec::new()),
+            reads: AtomicUsize::new(0),
+            deadlines: Mutex::new(Vec::new()),
+        });
+        let (prepared, _) = prepared_with_real_lease(
+            binding,
+            Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            Box::new(FailingCleanup(Arc::clone(&cleanup_calls))),
+            &operations,
+        );
+
+        let failure = broker
+            .commit(reservation, prepared)
+            .expect_err("initial heartbeat timeout rejects the prepare");
+
+        assert_eq!(failure.close_reason, CloseReason::Timeout);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        let retry = broker
+            .handle(ControlRequest::Prepare(Request {
+                request_id: [7; 16],
+                deadline_unix_ms: now().expect("system clock") + 5_000,
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device".into(),
+                    app_id: "app".into(),
+                    app_artifact: "/tmp/app".into(),
+                    app_artifact_sha256: [0x61; 32],
+                },
+            }))
+            .expect_err("failed cleanup blocks reuse of the selection");
+        assert_eq!(retry.close_reason, CloseReason::CleanupFailed);
+    }
+
+    #[test]
+    fn initial_heartbeat_advances_the_ready_lease_counter_once() {
+        let (broker, operations, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let base = now().expect("system clock");
+        clock.0.store(base, Ordering::SeqCst);
+        let (reservation, binding) = ready_proof_reservation(&broker, &operations);
+        let raw = Arc::new(DeferredHeartbeatRaw {
+            target: Mutex::new(None),
+            incoming: Mutex::new(VecDeque::new()),
+            corrupt_reply: false,
+            writes: AtomicUsize::new(0),
+        });
+        let (prepared, target_lease) = prepared_with_real_lease(
+            binding,
+            Arc::clone(&raw) as Arc<dyn RawDuplex>,
+            Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))),
+            &operations,
+        );
+        *raw.target.lock().expect("test target lease") = Some(target_lease);
+
+        let first = match broker
+            .commit(reservation, prepared)
+            .expect("ready after proof")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("target ready"),
+        };
+        broker.inner.lock().expect("ready lease").leases[0]
+            .as_mut()
+            .expect("lease")
+            .last_client_activity = base;
+        let second = match broker
+            .handle(ControlRequest::Prepare(Request {
+                request_id: [7; 16],
+                deadline_unix_ms: now().expect("system clock") + 5_000,
+                body: PrepareBody {
+                    platform: Platform::IosSimulator,
+                    device_selector: "device".into(),
+                    app_id: "app".into(),
+                    app_artifact: "/tmp/app".into(),
+                    app_artifact_sha256: [0x61; 32],
+                },
+            }))
+            .expect("mint a second reference")
+        {
+            ControlSuccess::TargetReady(ready) => ready,
+            _ => panic!("target ready"),
+        };
+
+        assert_ne!(first.target_token, second.target_token);
+        assert_eq!(raw.writes.load(Ordering::SeqCst), 2);
+        let core = broker.inner.lock().expect("ready lease");
+        let lease = core.leases[0].as_ref().expect("lease");
+        assert!(lease.state == LeaseState::Ready);
+        assert_eq!(lease.heartbeat_counter, 3);
+        assert_eq!(lease.last_heartbeat_success, base);
+        assert_eq!(lease.last_heartbeat_attempt, base);
+    }
+
     #[cfg(feature = "internal-diagnostics")]
     #[test]
     fn authenticated_ack_commit_mismatch_survives_broker_ipc_as_the_ack_marker() {
@@ -3126,6 +3723,7 @@ mod lifecycle_tests {
             terminal_reason: None,
             terminal_handoff: HandoffState::NotHandedOff,
             handoff: HandoffState::NotHandedOff,
+            ready_probe: Arc::new(ReadyProbe::new()),
             operations: Arc::clone(&operations),
         };
         let clock = Arc::new(TestClock(AtomicU64::new(1)));
@@ -3666,6 +4264,257 @@ mod lifecycle_tests {
             assert_eq!(error.close_reason, expected);
             assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
         }
+    }
+
+    #[test]
+    fn prepare_probes_control_before_reusing_a_ready_lease_after_target_restart() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::clone(&cleanup_calls))));
+        let (broker_lease, target_lease) = real_lease_connections();
+        let raw = Arc::new(ClosingHeartbeatRaw {
+            target: Mutex::new(target_lease),
+            incoming: Mutex::new(VecDeque::new()),
+            writes: AtomicUsize::new(0),
+        });
+        let base = now().expect("system clock");
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.generation = 1;
+            lease.epoch = 1;
+            lease.control = Some(Arc::clone(&raw) as Arc<dyn RawDuplex>);
+            lease.lease_crypto = Some(broker_lease);
+            lease.control_reader = Some(raw_transport::RawFrameReader::new());
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.last_heartbeat_attempt = base;
+            lease.last_heartbeat_success = base;
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let failure = broker
+            .handle(same_key_prepare(base + 5_000))
+            .expect_err("a restarted Target must be probed, not reminted");
+
+        assert_eq!(failure.close_reason, CloseReason::PeerClosed);
+        assert_eq!(raw.writes.load(Ordering::SeqCst), 1);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            broker
+                .inner
+                .lock()
+                .expect("terminal lease")
+                .leases
+                .iter()
+                .filter_map(Option::as_ref)
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn prepare_does_not_remint_a_ready_lease_when_its_control_probe_times_out() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::clone(&cleanup_calls))));
+        let (broker_lease, _) = real_lease_connections();
+        let raw = Arc::new(MissingHeartbeatRaw {
+            writes: Mutex::new(Vec::new()),
+            reads: AtomicUsize::new(0),
+            deadlines: Mutex::new(Vec::new()),
+        });
+        let base = now().expect("system clock");
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.generation = 1;
+            lease.epoch = 1;
+            lease.control = Some(Arc::clone(&raw) as Arc<dyn RawDuplex>);
+            lease.lease_crypto = Some(broker_lease);
+            lease.control_reader = Some(raw_transport::RawFrameReader::new());
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.last_heartbeat_attempt = base;
+            lease.last_heartbeat_success = base;
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let failure = broker
+            .handle(same_key_prepare(base + 5_000))
+            .expect_err("an unanswered control probe must not mint a Ready Reference");
+
+        assert_eq!(failure.close_reason, CloseReason::Timeout);
+        assert_eq!(raw.writes.lock().expect("heartbeat writes").len(), 1);
+        assert_eq!(raw.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn prepare_does_not_mint_when_a_successful_control_probe_completes_at_its_deadline() {
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::clone(&cleanup_calls))));
+        let (broker_lease, target_lease) = real_lease_connections();
+        let base = now().expect("system clock");
+        let deadline = base + 5_000;
+        let raw = Arc::new(DeadlineReplyingHeartbeatRaw {
+            target: Mutex::new(target_lease),
+            incoming: Mutex::new(VecDeque::new()),
+            clock: Arc::clone(&clock),
+            advance_to: deadline,
+        });
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.generation = 1;
+            lease.epoch = 1;
+            lease.control = Some(Arc::clone(&raw) as Arc<dyn RawDuplex>);
+            lease.lease_crypto = Some(broker_lease);
+            lease.control_reader = Some(raw_transport::RawFrameReader::new());
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.last_heartbeat_attempt = base;
+            lease.last_heartbeat_success = base;
+        }
+        clock.0.store(base, Ordering::SeqCst);
+
+        let failure = broker
+            .handle(same_key_prepare(deadline))
+            .expect_err("a probe completed at the prepare deadline must not mint");
+
+        assert_eq!(failure.close_reason, CloseReason::Timeout);
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn concurrent_prepare_waits_for_the_in_flight_ready_probe_then_mints_both_references() {
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let broker = Arc::new(broker);
+        let (broker_lease, target_lease) = real_lease_connections();
+        let started = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let raw = Arc::new(BlockingReplyingHeartbeatRaw {
+            target: Mutex::new(target_lease),
+            incoming: Mutex::new(VecDeque::new()),
+            started: Arc::clone(&started),
+            release: Arc::clone(&release),
+            blocks_once: AtomicUsize::new(0),
+        });
+        let base = now().expect("system clock");
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.generation = 1;
+            lease.epoch = 1;
+            lease.control = Some(Arc::clone(&raw) as Arc<dyn RawDuplex>);
+            lease.lease_crypto = Some(broker_lease);
+            lease.control_reader = Some(raw_transport::RawFrameReader::new());
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.last_heartbeat_attempt = base;
+            lease.last_heartbeat_success = base;
+        }
+        clock.0.store(base, Ordering::SeqCst);
+        let deadline = base + 5_000;
+        let first_broker = Arc::clone(&broker);
+        let first = thread::spawn(move || first_broker.handle(same_key_prepare(deadline)));
+        started.wait();
+
+        let second_broker = Arc::clone(&broker);
+        let (second_sender, second_receiver) = mpsc::channel();
+        let second_task = thread::spawn(move || {
+            second_sender
+                .send(second_broker.handle(same_key_prepare(deadline)))
+                .expect("second result")
+        });
+        assert!(
+            second_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "the second prepare waits for the current authenticated probe"
+        );
+        release.wait();
+
+        let first = match first.join().expect("first prepare") {
+            Ok(ControlSuccess::TargetReady(ready)) => ready,
+            other => panic!("first ready: {other:?}"),
+        };
+        let second = match second_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second prepare result")
+        {
+            Ok(ControlSuccess::TargetReady(ready)) => ready,
+            other => panic!("second ready: {other:?}"),
+        };
+        second_task.join().expect("second prepare");
+        assert_ne!(first.target_token, second.target_token);
+    }
+
+    #[test]
+    fn prepare_waits_for_an_in_flight_maintenance_heartbeat() {
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        let broker = Arc::new(broker);
+        let (broker_lease, target_lease) = real_lease_connections();
+        let started = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let raw = Arc::new(BlockingReplyingHeartbeatRaw {
+            target: Mutex::new(target_lease),
+            incoming: Mutex::new(VecDeque::new()),
+            started: Arc::clone(&started),
+            release: Arc::clone(&release),
+            blocks_once: AtomicUsize::new(0),
+        });
+        let base = now().expect("system clock");
+        {
+            let mut core = broker.inner.lock().expect("test core");
+            let lease = core.leases[0].as_mut().expect("ready lease");
+            lease.generation = 1;
+            lease.epoch = 1;
+            lease.control = Some(Arc::clone(&raw) as Arc<dyn RawDuplex>);
+            lease.lease_crypto = Some(broker_lease);
+            lease.control_reader = Some(raw_transport::RawFrameReader::new());
+            lease.created = base;
+            lease.last_client_activity = base;
+            lease.last_heartbeat_attempt = base - HEARTBEAT_INTERVAL_MS;
+            lease.last_heartbeat_success = base;
+        }
+        clock.0.store(base, Ordering::SeqCst);
+        let maintenance_broker = Arc::clone(&broker);
+        let maintenance = thread::spawn(move || maintenance_broker.maintain());
+        started.wait();
+
+        let prepare_broker = Arc::clone(&broker);
+        let deadline = base + 5_000;
+        let (prepare_sender, prepare_receiver) = mpsc::channel();
+        let prepare = thread::spawn(move || {
+            prepare_sender
+                .send(prepare_broker.handle(same_key_prepare(deadline)))
+                .expect("prepare result")
+        });
+        assert!(
+            prepare_receiver
+                .recv_timeout(Duration::from_millis(50))
+                .is_err(),
+            "prepare waits for the maintenance C1 heartbeat"
+        );
+        release.wait();
+
+        maintenance
+            .join()
+            .expect("maintenance")
+            .expect("healthy heartbeat");
+        let prepared = match prepare_receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("prepare result")
+        {
+            Ok(ControlSuccess::TargetReady(ready)) => ready,
+            other => panic!("ready after maintenance: {other:?}"),
+        };
+        prepare.join().expect("prepare");
+        assert_ne!(prepared.target_token, [0; 32]);
     }
 
     #[test]
