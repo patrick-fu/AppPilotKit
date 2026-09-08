@@ -16,7 +16,7 @@ Schema-mismatch, undeclared, oversized, unauthorized, unclassified,
 and disclosure-limit fixtures must fail closed before side effects; the fixed
 secret canary must not enter public evidence.
 
-The Journey script pins the repository's isolated Rust 1.94.0 toolchain
+The Journey script pins the host-local isolated Rust 1.94.0 toolchain
 (`RUSTUP_HOME`, `CARGO_HOME`, `RUSTUP_TOOLCHAIN`, `PATH`, `CARGO`, and `RUSTC`)
 and checks both `aarch64-linux-android` and `x86_64-linux-android` targets
 before Gradle starts. Build the Debug fixture and verify Release exclusion

@@ -614,7 +614,6 @@ function replaceOption(argv, option, value) {
 
 function runCatalogScenario(phase, cli, target, contract, evidenceWriter, platform) {
   const { resource, ordinaryAction, destructiveAction, canary } = contract;
-  activeCanary = canary;
   const list = execute(`${phase}.catalog.list`, cli, ["catalog", "list", `--target=${target}`, "--output=json", "--non-interactive"], "", evidenceWriter);
   ensureNoCanary(list.stdout, canary, `${phase} catalog list`);
   const listResult = requireMachineSucceeded(list, `${phase} catalog list`);
@@ -780,6 +779,7 @@ async function main() {
   const configuredContract = requireString(config.contract, "configuration contract");
   const contractPath = isAbsolute(configuredContract) ? configuredContract : resolve(dirname(configPath), configuredContract);
   const contract = validateContract(await readJson(contractPath, "demo scenario contract"), platform);
+  activeCanary = contract.canary;
   const request = requireObject(config.prepare_request, "configuration prepare_request");
   const expectedPrepareRequestKeys = ["app_artifact", "app_id", "artifact_encoding", "device_selector", "platform", "schema_version"];
   if (!isDeepStrictEqual(Object.keys(request).sort(), expectedPrepareRequestKeys)) fail("prepare request must contain exactly six keys");
