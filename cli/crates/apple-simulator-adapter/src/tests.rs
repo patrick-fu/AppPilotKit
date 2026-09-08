@@ -157,6 +157,7 @@ fn device_json() -> Vec<u8> {
 
 #[derive(Clone)]
 struct RecordedRequest {
+    program: PathBuf,
     args: Vec<OsString>,
     descriptor_env: Option<OsString>,
     scrub: bool,
@@ -372,6 +373,7 @@ impl FakeRunner {
             .lock()
             .expect("requests")
             .push(RecordedRequest {
+                program: request.program.clone(),
                 args: request.args.clone(),
                 descriptor_env: request.descriptor_env.clone(),
                 scrub: request.scrub_simctl_child,
@@ -467,7 +469,7 @@ impl ToolRunner for Arc<FakeRunner> {
         {
             return Ok(success(format!("{}\n", self.app.display()).into_bytes()));
         }
-        if args == ["simctl", "spawn", UDID, "/bin/ps", "-axo", "pid=,command="] {
+        if request.program == Path::new("/bin/ps") && args == ["-axo", "pid=,command="] {
             return Ok(success(self.process_table()));
         }
         if args
@@ -501,18 +503,12 @@ impl ToolRunner for Arc<FakeRunner> {
                 format!("{}: {}\n", self.app_id, self.pid.load(Ordering::Acquire)).into_bytes(),
             ));
         }
-        if args.len() == 6
-            && args[..4]
-                == [
-                    "simctl".to_owned(),
-                    "spawn".to_owned(),
-                    UDID.to_owned(),
-                    "/bin/kill".to_owned(),
-                ]
-            && matches!(args[4].as_str(), "-TERM" | "-KILL")
-            && args[5] == self.pid.load(Ordering::Acquire).to_string()
+        if request.program == Path::new("/bin/kill")
+            && args.len() == 2
+            && matches!(args[0].as_str(), "-TERM" | "-KILL")
+            && args[1] == self.pid.load(Ordering::Acquire).to_string()
         {
-            let effective = if args[4] == "-TERM" {
+            let effective = if args[0] == "-TERM" {
                 self.term_effective.load(Ordering::Acquire)
             } else {
                 self.kill_effective.load(Ordering::Acquire)
@@ -714,6 +710,27 @@ fn pending_launch_marks_closed_rejection_sources_without_target_values() {
 }
 
 #[test]
+fn process_inventory_uses_host_ps_without_simulator_spawn_overhead() {
+    let artifact = TempArtifact::new("host-process-inventory");
+    let runner = FakeRunner::new(&artifact.app, "com.example.Inventory".to_owned());
+    runner.running.store(true, Ordering::Release);
+    let processes = require(matching_processes(
+        &runner,
+        &runner.app,
+        &Cancellation::new(),
+        deadline_after(1_000),
+    ));
+    assert_eq!(processes, [runner.pid.load(Ordering::Acquire)]);
+    let requests = runner.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].program, Path::new("/bin/ps"));
+    assert_eq!(
+        requests[0].args,
+        ["-axo", "pid=,command="].map(OsString::from)
+    );
+}
+
+#[test]
 fn exact_pid_launch_raw_io_and_proven_cleanup() {
     let artifact = TempArtifact::new("happy");
     let app_id = format!(
@@ -769,6 +786,18 @@ fn exact_pid_launch_raw_io_and_proven_cleanup() {
     assert_eq!(
         launch.descriptor_env.as_deref(),
         Some(OsStr::new(&URL_SAFE_NO_PAD.encode(descriptor_bytes)))
+    );
+    let signal = requests
+        .iter()
+        .find(|request| request.args.iter().any(|arg| arg == "-TERM"))
+        .expect("termination request");
+    assert_eq!(signal.program, Path::new("/bin/kill"));
+    assert_eq!(
+        signal.args,
+        [
+            OsString::from("-TERM"),
+            OsString::from(runner.pid.load(Ordering::Acquire).to_string())
+        ]
     );
 }
 
@@ -1121,12 +1150,7 @@ fn cleanup_rejects_pid_reuse_without_signalling_the_new_process() {
             .lock()
             .expect("requests")
             .iter()
-            .any(|request| {
-                request
-                    .args
-                    .iter()
-                    .any(|arg| arg == OsStr::new("/bin/kill"))
-            })
+            .any(|request| request.program == Path::new("/bin/kill"))
     );
     runner.running.store(false, Ordering::Release);
 }
@@ -1161,12 +1185,7 @@ fn endpoint_takeover_failure_never_kills_a_possibly_attached_process() {
             .lock()
             .expect("requests")
             .iter()
-            .any(|request| {
-                request
-                    .args
-                    .iter()
-                    .any(|arg| arg == OsStr::new("/bin/kill"))
-            })
+            .any(|request| request.program == Path::new("/bin/kill"))
     );
     runner.running.store(false, Ordering::Release);
 }
@@ -1839,7 +1858,6 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
     assert!(
         require(matching_processes(
             &runner,
-            selection.device_selector(),
             &installed,
             &cancellation,
             deadline,
@@ -1864,18 +1882,18 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
     let owner = require(prove_exact_owner(
         &runner,
         &DarwinProcessIdentityProbe,
-        &selection,
         &installed,
         pid,
         &cancellation,
         deadline,
     ));
+    let cleanup_deadline = deadline_after(CLEANUP_BUDGET_MS);
     require(terminate_exact_owner(
         &runner,
         &DarwinProcessIdentityProbe,
         &owner,
         &cancellation,
-        deadline,
+        cleanup_deadline,
     ));
     let verifier = D0ArtifactVerifier;
     let launch_artifact = PreparedLaunchArtifact {
@@ -1894,6 +1912,6 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
             installed_by_lease: true,
         },
         &cancellation,
-        deadline,
+        cleanup_deadline,
     ));
 }

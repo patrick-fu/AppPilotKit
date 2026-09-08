@@ -479,7 +479,6 @@ impl PendingLaunch for ApplePendingLaunch {
         let owner = match prove_exact_owner(
             self.runner.as_ref(),
             self.process_identity.as_ref(),
-            &self.selection,
             &candidate.app_path,
             pid,
             &cancellation,
@@ -652,7 +651,6 @@ impl ApplePendingLaunch {
         let cleanup_cancellation = Cancellation::new();
         let cleanup = matching_processes(
             self.runner.as_ref(),
-            self.selection.device_selector(),
             &candidate.app_path,
             &cleanup_cancellation,
             cleanup_deadline,
@@ -1084,15 +1082,7 @@ fn verify_exact_candidate(
             failure(PlatformFailureKind::Rejected)
         });
     }
-    if !matching_processes(
-        runner,
-        selection.device_selector(),
-        &installed,
-        cancellation,
-        deadline,
-    )?
-    .is_empty()
-    {
+    if !matching_processes(runner, &installed, cancellation, deadline)?.is_empty() {
         return Err(failure(if installed_by_lease {
             PlatformFailureKind::CleanupFailed
         } else {
@@ -1452,7 +1442,6 @@ fn installed_app_path(
 
 #[derive(Clone)]
 struct TargetOwner {
-    udid: String,
     app_path: PathBuf,
     pid: u32,
     identity: ProcessIdentity,
@@ -1562,25 +1551,17 @@ impl ProcessIdentityProbe for DarwinProcessIdentityProbe {
 fn prove_exact_owner(
     runner: &dyn ToolRunner,
     process_identity: &dyn ProcessIdentityProbe,
-    selection: &TargetSelection,
     installed_app: &Path,
     pid: u32,
     cancellation: &Cancellation,
     deadline: AbsoluteDeadline,
 ) -> Result<TargetOwner, PlatformFailure> {
-    let processes = matching_processes(
-        runner,
-        selection.device_selector(),
-        installed_app,
-        cancellation,
-        deadline,
-    )?;
+    let processes = matching_processes(runner, installed_app, cancellation, deadline)?;
     if processes.as_slice() != [pid] {
         return Err(failure(PlatformFailureKind::Rejected));
     }
     let identity = process_identity.identity(pid, installed_app)?;
     Ok(TargetOwner {
-        udid: selection.device_selector().to_owned(),
         app_path: installed_app.to_path_buf(),
         pid,
         identity,
@@ -1589,17 +1570,15 @@ fn prove_exact_owner(
 
 fn matching_processes(
     runner: &dyn ToolRunner,
-    udid: &str,
     installed_app: &Path,
     cancellation: &Cancellation,
     deadline: AbsoluteDeadline,
 ) -> Result<Vec<u32>, PlatformFailure> {
+    // Simulator processes share the Host process table. Launching ps through
+    // simctl adds per-probe startup latency to the bounded cleanup sequence.
     let output = run_success(
         runner,
-        ToolRequest::plain(
-            runner.program(),
-            ["simctl", "spawn", udid, "/bin/ps", "-axo", "pid=,command="],
-        ),
+        ToolRequest::plain(Path::new("/bin/ps"), ["-axo", "pid=,command="]),
         cancellation,
         deadline,
     )?;
@@ -2050,14 +2029,7 @@ fn cleanup_owned_installation(
         || artifact_verifier
             .verify_installed(&current, artifact, selection, cancellation, deadline)
             .is_err()
-        || !matching_processes(
-            runner,
-            selection.device_selector(),
-            &current,
-            cancellation,
-            deadline,
-        )?
-        .is_empty()
+        || !matching_processes(runner, &current, cancellation, deadline)?.is_empty()
     {
         return Err(failure(PlatformFailureKind::CleanupFailed));
     }
@@ -2089,7 +2061,7 @@ fn terminate_exact_owner(
     cancellation: &Cancellation,
     deadline: AbsoluteDeadline,
 ) -> Result<(), PlatformFailure> {
-    let current = matching_processes(runner, &owner.udid, &owner.app_path, cancellation, deadline)?;
+    let current = matching_processes(runner, &owner.app_path, cancellation, deadline)?;
     if current.is_empty() {
         return Ok(());
     }
@@ -2102,17 +2074,7 @@ fn terminate_exact_owner(
     let pid = owner.pid.to_string();
     run_success(
         runner,
-        ToolRequest::plain(
-            runner.program(),
-            [
-                "simctl",
-                "spawn",
-                owner.udid.as_str(),
-                "/bin/kill",
-                "-TERM",
-                pid.as_str(),
-            ],
-        ),
+        ToolRequest::plain(Path::new("/bin/kill"), ["-TERM", pid.as_str()]),
         cancellation,
         deadline,
     )
@@ -2121,8 +2083,7 @@ fn terminate_exact_owner(
         .saturating_add(u64::try_from(TERM_GRACE.as_millis()).unwrap_or(CLEANUP_BUDGET_MS));
     let mut sent_kill = false;
     loop {
-        let current =
-            matching_processes(runner, &owner.udid, &owner.app_path, cancellation, deadline)?;
+        let current = matching_processes(runner, &owner.app_path, cancellation, deadline)?;
         if current.is_empty() {
             return Ok(());
         }
@@ -2135,17 +2096,7 @@ fn terminate_exact_owner(
         if !sent_kill && unix_ms()? >= term_deadline {
             run_success(
                 runner,
-                ToolRequest::plain(
-                    runner.program(),
-                    [
-                        "simctl",
-                        "spawn",
-                        owner.udid.as_str(),
-                        "/bin/kill",
-                        "-KILL",
-                        pid.as_str(),
-                    ],
-                ),
+                ToolRequest::plain(Path::new("/bin/kill"), ["-KILL", pid.as_str()]),
                 cancellation,
                 deadline,
             )
