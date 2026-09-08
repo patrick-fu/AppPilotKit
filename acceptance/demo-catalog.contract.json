@@ -1,0 +1,148 @@
+{
+  "contract_revision": "1",
+  "scenario": {
+    "id": "demo.catalog",
+    "catalog_membership": "not_a_semantic_capability",
+    "seed": {
+      "id": "catalog-v1",
+      "restoration": "A platform reset terminates the exact Acceptance Host Target process. The next successful prepare starts a fresh process at this seed with the catalog value restored and action history empty.",
+      "scope": "one Target process"
+    },
+    "capabilities": {
+      "resources": [
+        {
+          "id": "acceptance.catalog.state",
+          "kind": "resource",
+          "declaration_revision": 1,
+          "input_schema": null,
+          "value_schema": {
+            "id": "schema_demo_catalog_state_v1",
+            "revision": 1,
+            "digest": "sha256:b3ffcc96d1da03c447d243ba196f9af01a38447bbb03d5139aed9923c7300804"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "app://acceptance.catalog.state/value@1",
+            "type": "object",
+            "required": ["scenario", "seed", "platform", "count", "available"],
+            "properties": {
+              "scenario": { "type": "string", "const": "demo.catalog" },
+              "seed": { "type": "string", "const": "catalog-v1" },
+              "platform": { "type": "string" },
+              "count": { "type": "integer", "minimum": 0 },
+              "available": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
+          "availability": {
+            "mode": "dynamic",
+            "initial": true,
+            "after_first_increment": false,
+            "after_second_increment": true,
+            "after_process_restart": true,
+            "observation": "catalog query becomes unavailable only after the first ordinary increment and becomes available again after the second; membership remains frozen while a restarted process re-registers the same IDs at the new generation. Unsafe output fixtures reuse declared fields so schema validation remains strict."
+          }
+        }
+      ],
+      "actions": [
+        {
+          "id": "acceptance.catalog.increment",
+          "kind": "action",
+          "class": "ordinary",
+          "declaration_revision": 1,
+          "input_schema": {
+            "id": "schema_demo_catalog_increment_input_v1",
+            "revision": 1,
+            "digest": "sha256:bd75453e5e97b497e4ee54db7cd82f4e654d04da370d8106e645e0bb9769c2fe"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "app://acceptance.catalog.increment/input@1",
+            "type": "object",
+            "required": ["amount"],
+            "properties": {
+              "amount": { "type": "integer", "const": 1 }
+            },
+            "additionalProperties": false
+          },
+          "policy": {
+            "authorization": "none",
+            "retry_safety": "no_automatic_retry"
+          },
+          "availability": {
+            "mode": "dynamic",
+            "initial": true,
+            "after_process_restart": true,
+            "observation": "ordinary action remains available while the Target process is alive so repeated public increments can observe resource availability transitions"
+          }
+        },
+        {
+          "id": "acceptance.catalog.reset",
+          "kind": "action",
+          "class": "destructive",
+          "declaration_revision": 1,
+          "input_schema": {
+            "id": "schema_demo_catalog_reset_input_v1",
+            "revision": 1,
+            "digest": "sha256:079b413f2ca72310290f3b07da82503b0dd74c408358570ead26ffeea94efd7c"
+          },
+          "document": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "app://acceptance.catalog.reset/input@1",
+            "type": "object",
+            "required": ["confirm"],
+            "properties": {
+              "confirm": { "type": "string", "const": "reset-catalog-v1" }
+            },
+            "additionalProperties": false
+          },
+          "policy": {
+            "authorization": "destructive_authorization",
+            "retry_safety": "retry_with_proof_only"
+          },
+          "availability": {
+            "mode": "dynamic",
+            "initial": true,
+            "after_process_restart": true,
+            "observation": "destructive action requires an unexpired grant bound to this Target process, session, declaration, schema and input digest; this fixture denies grants so the public Journey proves the fail-closed path"
+          }
+        }
+      ]
+    },
+    "observations": {
+      "secret": {
+        "classification": "secret",
+        "fixed_canary": "APPPILOTKIT_DEMO_CATALOG_SECRET_CANARY_7f9c4b2e",
+        "expected": "never_disclosed",
+        "surfaces": ["argv", "environment", "stdout", "stderr", "logs", "machine_result", "artifacts"],
+        "artifact_scope": "public CLI Machine Result Artifacts and retained evidence; the Acceptance Host app/apk is an input fixture, not a public result Artifact"
+      },
+      "unclassified": {
+        "classification": "unclassified",
+        "fixture": "a provider value marked unclassified must fail closed before disclosure or action dispatch",
+        "expected": "disclosure_denied"
+      },
+      "oversized": {
+        "fixture": "a value exceeding the negotiated disclosure limit",
+        "expected": "resource_exhausted",
+        "state_change": "none"
+      },
+      "process_restart": {
+        "fixture": "query and invoke before restart, then prepare a new Target process and repeat",
+        "expected": ["catalog_generation_changes", "seed_restored", "ordinary_history_empty", "old_identifier_and_session_rejected"]
+      }
+    },
+    "native_differences": {
+      "ios": {
+        "platform": "ios",
+        "host_framework": "SwiftUI/UIKit",
+        "dynamic_availability": "TargetRuntimeComposition registers the same IDs; process generation is the native UInt64 generation"
+      },
+      "android": {
+        "platform": "android",
+        "host_framework": "Jetpack Compose",
+        "dynamic_availability": "TargetRuntimeComposition registers the same IDs; process generation is the native Long generation"
+      }
+    }
+  }
+}

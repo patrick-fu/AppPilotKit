@@ -82,6 +82,7 @@ fi
 export APPPILOTKIT_ANDROID_ADB="$adb"
 export JAVA_HOME="$java_home"
 export CARGO_TARGET_DIR="$work_root/cargo-target"
+export CARGO_BUILD_JOBS=1
 # Keep Gradle and the installed CLI build on the same caller-selected Cargo.
 # RUSTUP_HOME, CARGO_HOME, and RUSTC remain inherited for rustup-based setups.
 export CARGO="$cargo"
@@ -98,6 +99,7 @@ apk=${apk:A}
 (
   cd "$repo_dir/cli"
   "$cargo" build \
+    --jobs 1 \
     --locked \
     --release \
     --package apppilotkit-production-composition \
@@ -112,12 +114,12 @@ prefix="$work_root/installed"
 prepare_program="$prefix/libexec/apppilotkit-target-prepare"
 [[ -x "$prepare_program" ]] || { print -u2 "missing installed target prepare: $prepare_program"; exit 3; }
 
-config="$work_root/foundation-run.json"
+config="$work_root/catalog-run.json"
 cat >"$config" <<EOF
 {
   "prefix": "$prefix",
   "platform": "android",
-  "contract": "$repo_dir/acceptance/demo-foundation.contract.json",
+  "contract": "$repo_dir/acceptance/demo-catalog.contract.json",
   "prepare_request": {
     "schema_version": "1.0",
     "platform": "android-emulator",
@@ -134,8 +136,8 @@ EOF
 
 node "$repo_dir/acceptance/harness/installed-cli-harness.mjs" \
   --config "$config" \
-  --evidence "$work_root/foundation-evidence.json"
+  --evidence "$work_root/catalog-evidence.json"
 
 print "Android acceptance journey passed."
 print "Configuration: $config"
-print "Evidence: $work_root/foundation-evidence.json"
+print "Evidence: $work_root/catalog-evidence.json"

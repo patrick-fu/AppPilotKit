@@ -57,7 +57,7 @@ require("node:fs").writeFileSync(output, `${JSON.stringify({
   source: {
     digest: source,
     inputs: [
-      "acceptance/demo-foundation.contract.json",
+      "acceptance/demo-catalog.contract.json",
       "cli",
       "ios/{Package.swift,InternalTargetTransport,AcceptanceHost}",
       "transport",
@@ -129,7 +129,7 @@ if [[ "$simulator_id" == '--provenance-self-test' ]]; then
 fi
 
 source_digest=$(tree_sha256 \
-  "$repo_dir/acceptance/demo-foundation.contract.json" \
+  "$repo_dir/acceptance/demo-catalog.contract.json" \
   "$repo_dir/cli" \
   "$repo_dir/ios/Package.swift" \
   "$repo_dir/ios/InternalTargetTransport" \
@@ -140,9 +140,9 @@ work_root=$(realpath "$work_root")
 cache_key=${source_digest#sha256:}
 prefix="$work_root/installed-prefix-$cache_key"
 app_path="$work_root/AcceptanceHost.app"
-config_path="$work_root/foundation-run.json"
-evidence_path="$work_root/foundation-evidence.json"
-provenance_path="$work_root/foundation-provenance.json"
+config_path="$work_root/catalog-run.json"
+evidence_path="$work_root/catalog-evidence.json"
+provenance_path="$work_root/catalog-provenance.json"
 
 [[ -x "$internal_runner" && -x "$stage_install" && -f "$ffi_manifest" && -f "$composition_manifest" ]] || {
   print -u2 "missing acceptance journey dependency"
@@ -165,9 +165,11 @@ xcrun simctl bootstatus "$simulator_id" -b
 
 export RUSTUP_HOME="$rustup_root"
 export CARGO_HOME="$cargo_root"
+export CARGO_BUILD_JOBS=1
 export CARGO_TARGET_DIR="$work_root/cargo-target-$cache_key"
 
 "$cargo_root/bin/cargo" +1.94.0 build \
+  --jobs 1 \
   --locked \
   --release \
   --manifest-path "$composition_manifest"
@@ -180,6 +182,7 @@ derived_data="$work_root/derived-data-$cache_key"
 (
   cd "$host_dir"
   xcodebuild build \
+    -jobs 1 \
     -scheme AppPilotKitAcceptanceHost \
     -configuration Debug \
     -destination 'generic/platform=iOS Simulator' \
@@ -209,7 +212,7 @@ prepare_digest=$(file_sha256 "$prefix/libexec/apppilotkit-target-prepare")
 ffi_digest=$(file_sha256 "$ffi_dir/libapppilotkit_transport_ffi.a")
 executable_digest=$(file_sha256 "$app_path/AcceptanceHost")
 completed_source_digest=$(tree_sha256 \
-  "$repo_dir/acceptance/demo-foundation.contract.json" \
+  "$repo_dir/acceptance/demo-catalog.contract.json" \
   "$repo_dir/cli" \
   "$repo_dir/ios/Package.swift" \
   "$repo_dir/ios/InternalTargetTransport" \
@@ -220,7 +223,7 @@ write_provenance "$provenance_path" "$source_digest" "$app_tree_digest" \
   "$cli_digest" "$broker_digest" "$prepare_digest" "$ffi_digest" "$executable_digest" \
   "${ffi_cache_digest#sha256:}"
 final_source_digest=$(tree_sha256 \
-  "$repo_dir/acceptance/demo-foundation.contract.json" \
+  "$repo_dir/acceptance/demo-catalog.contract.json" \
   "$repo_dir/cli" \
   "$repo_dir/ios/Package.swift" \
   "$repo_dir/ios/InternalTargetTransport" \
@@ -237,7 +240,7 @@ provenance_matches_source "$provenance_path" "$source_digest" || {
 # so the first prepare owns its launch.
 xcrun simctl uninstall "$simulator_id" dev.apppilotkit.acceptancehost.ios >/dev/null 2>&1 || true
 
-node - "$config_path" "$prefix" "$repo_dir/acceptance/demo-foundation.contract.json" "$simulator_id" "$app_path" <<'NODE'
+node - "$config_path" "$prefix" "$repo_dir/acceptance/demo-catalog.contract.json" "$simulator_id" "$app_path" <<'NODE'
 const [configPath, prefix, contract, udid, appArtifact] = process.argv.slice(2);
 const config = {
   prefix,

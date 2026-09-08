@@ -96,6 +96,253 @@ func makeFoundationComposition(processGeneration: UInt64) throws -> TargetRuntim
   )
 }
 
+// MARK: - Demo catalog composition
+
+private enum DemoCatalogMode: Sendable {
+  case safe
+  case unclassified
+  case sensitive
+  case oversized
+}
+
+private func demoCatalogSecretCanary() -> String {
+  ["APPPILOTKIT_DEMO_CATALOG_", "SECRET_CANARY_7f9c4b2e"].joined()
+}
+
+private struct DemoCatalogStateValue: Sendable {
+  let count: Int64
+  let mode: DemoCatalogMode
+
+  /// `available` is deliberately a value in the public state, while the
+  /// Resource itself remains queryable so the fail-closed fixtures can be
+  /// observed at counts 3–5.
+  var available: Bool { count.isMultiple(of: 2) }
+}
+
+private actor DemoCatalogState {
+  private var count: Int64 = 0
+
+  func snapshot() -> DemoCatalogStateValue {
+    let mode: DemoCatalogMode
+    switch count {
+    case 3: mode = .unclassified
+    case 4...: mode = .oversized
+    default: mode = .safe
+    }
+    return DemoCatalogStateValue(count: count, mode: mode)
+  }
+
+  func increment() { count += 1 }
+  func reset() { count = 0 }
+  func isAvailable() -> Bool { count != 1 }
+}
+
+private struct DemoCatalogIncrementInput: Sendable {
+  let amount: Int64
+}
+
+private struct DemoCatalogResetInput: Sendable {
+  let confirm: String
+}
+
+private struct DemoCatalogEvidenceState: Sendable {
+  let before: Int
+  let stable: Int
+  let after: Int
+}
+
+private actor DemoCatalogEvidenceRecorder {
+  private var value = DemoCatalogEvidenceState(before: 0, stable: 0, after: 0)
+
+  func recordBefore() { value = DemoCatalogEvidenceState(before: value.before + 1, stable: value.stable, after: value.after) }
+  func recordStability() { value = DemoCatalogEvidenceState(before: value.before, stable: value.stable + 1, after: value.after) }
+  func recordAfter() { value = DemoCatalogEvidenceState(before: value.before, stable: value.stable, after: value.after + 1) }
+}
+
+private struct DemoCatalogEvidence: ActionEvidencePort {
+  let recorder: DemoCatalogEvidenceRecorder
+
+  func captureBefore(context: TargetActionContext) async throws {
+    await recorder.recordBefore()
+  }
+
+  func observeStability(context: TargetActionContext) async throws {
+    await recorder.recordStability()
+  }
+
+  func captureAfter(context: TargetActionContext) async throws {
+    await recorder.recordAfter()
+  }
+}
+
+private enum DemoCatalogInputError: Error {
+  case invalid
+}
+
+func makeDemoCatalogComposition(processGeneration: UInt64) throws -> TargetRuntimeComposition {
+  let state = DemoCatalogState()
+  let stateSchema = try SemanticSchema(
+    id: "schema_demo_catalog_state_v1",
+    revision: 1,
+    document: .object([
+      "$schema": .string("https://json-schema.org/draft/2020-12/schema"),
+      "$id": .string("app://acceptance.catalog.state/value@1"),
+      "type": .string("object"),
+      "required": .array([
+        .string("scenario"), .string("seed"), .string("platform"),
+        .string("count"), .string("available"),
+      ]),
+      "properties": .object([
+        "scenario": .object(["type": .string("string"), "const": .string("demo.catalog")]),
+        "seed": .object(["type": .string("string"), "const": .string("catalog-v1")]),
+        "platform": .object(["type": .string("string")]),
+        "count": .object(["type": .string("integer"), "minimum": .integer(0)]),
+        "available": .object(["type": .string("boolean")]),
+      ]),
+      "additionalProperties": .bool(false),
+    ])
+  )
+  let incrementSchema = try SemanticSchema(
+    id: "schema_demo_catalog_increment_input_v1",
+    revision: 1,
+    document: .object([
+      "$schema": .string("https://json-schema.org/draft/2020-12/schema"),
+      "$id": .string("app://acceptance.catalog.increment/input@1"),
+      "type": .string("object"),
+      "required": .array([.string("amount")]),
+      "properties": .object([
+        "amount": .object(["type": .string("integer"), "const": .integer(1)]),
+      ]),
+      "additionalProperties": .bool(false),
+    ])
+  )
+  let resetSchema = try SemanticSchema(
+    id: "schema_demo_catalog_reset_input_v1",
+    revision: 1,
+    document: .object([
+      "$schema": .string("https://json-schema.org/draft/2020-12/schema"),
+      "$id": .string("app://acceptance.catalog.reset/input@1"),
+      "type": .string("object"),
+      "required": .array([.string("confirm")]),
+      "properties": .object([
+        "confirm": .object(["type": .string("string"), "const": .string("reset-catalog-v1")]),
+      ]),
+      "additionalProperties": .bool(false),
+    ])
+  )
+
+  let output = SemanticOutputCodec<DemoCatalogStateValue>(schema: stateSchema) { value in
+    let fields: [String: SemanticDisclosureValue] = [
+      "scenario": .publicValue(.string("demo.catalog")),
+      "seed": .publicValue(.string("catalog-v1")),
+      "platform": .publicValue(.string("ios")),
+      "count": .publicValue(.integer(value.count)),
+      "available": .publicValue(.bool(value.available)),
+    ]
+    switch value.mode {
+    case .safe:
+      return .object(fields)
+    case .unclassified:
+      var unsafe = fields
+      unsafe["secret"] = .unclassified(
+        .string(demoCatalogSecretCanary())
+      )
+      return .object(unsafe)
+    case .sensitive:
+      var unsafe = fields
+      unsafe["secret"] = .sensitive(
+        .string(demoCatalogSecretCanary())
+      )
+      return .object(unsafe)
+    case .oversized:
+      var oversized = fields
+      oversized["platform"] = .publicValue(.string(String(repeating: "x", count: 5_000)))
+      return .object(oversized)
+    }
+  }
+
+  let incrementInput = SemanticInputCodec(schema: incrementSchema) { raw in
+    guard case .object(let object) = raw,
+      case .integer(let amount)? = object["amount"], amount == 1
+    else { throw DemoCatalogInputError.invalid }
+    return DemoCatalogIncrementInput(amount: amount)
+  }
+  let resetInput = SemanticInputCodec(schema: resetSchema) { raw in
+    guard case .object(let object) = raw,
+      case .string(let confirm)? = object["confirm"], confirm == "reset-catalog-v1"
+    else { throw DemoCatalogInputError.invalid }
+    return DemoCatalogResetInput(confirm: confirm)
+  }
+
+  let builder = SemanticCatalogBuilder()
+  try builder.registerResource(
+    id: "acceptance.catalog.state",
+    declarationRevision: 1,
+    output: output,
+    availability: { await state.isAvailable() },
+    handler: { await state.snapshot() }
+  )
+  try builder.registerAction(
+    id: "acceptance.catalog.increment",
+    declarationRevision: 1,
+    input: incrementInput,
+    policy: SemanticActionPolicy(authorization: .none, retrySafety: .noAutomaticRetry),
+    availability: { true },
+    handler: { _ in await state.increment() }
+  )
+  try builder.registerAction(
+    id: "acceptance.catalog.reset",
+    declarationRevision: 1,
+    input: resetInput,
+    policy: SemanticActionPolicy(
+      authorization: .destructiveAuthorization,
+      retrySafety: .retryWithProofOnly
+    ),
+    availability: { true },
+    handler: { _ in await state.reset() }
+  )
+  let catalog = try builder.freeze(
+    identity: SemanticCatalogIdentity(id: "catalog_demo_catalog", generation: processGeneration)
+  )
+  let evidence = DemoCatalogEvidence(recorder: DemoCatalogEvidenceRecorder())
+  let actionCoordinator = TargetActionCoordinator(
+    catalog: catalog,
+    targetID: "target_acceptance_catalog",
+    evidence: evidence,
+    policy: TargetActionPolicy(
+      resolve: { _, subject in
+        SemanticActionPolicy(
+          authorization: subject.declaredAuthorization,
+          retrySafety: subject.retrySafety
+        )
+      },
+      validateDestructive: { _ in false },
+      consumeDestructive: { _ in false }
+    )
+  )
+  return try TargetRuntimeComposition(
+    catalog: catalog,
+    limits: SemanticProtocolLimits(
+      maximumRequestBytes: 4 * 1024,
+      maximumResponseBytes: 4 * 1024,
+      maximumPageItems: 16
+    ),
+    policy: SemanticProtocolPolicy(
+      discover: { _, _ in true },
+      discloseSchema: { _, _ in true },
+      discloseResource: { _, _ in true },
+      discloseAction: { _, _ in true }
+    ),
+    actionCoordinator: actionCoordinator,
+    processGeneration: processGeneration
+  )
+}
+
+// Stable aliases used by native acceptance tests and older harness revisions.
+func makeCatalogComposition(processGeneration: UInt64) throws -> TargetRuntimeComposition {
+  try makeDemoCatalogComposition(processGeneration: processGeneration)
+}
+
 private struct FoundationAcceptanceEvidence: ActionEvidencePort {
   func captureBefore(context: TargetActionContext) async throws {}
   func observeStability(context: TargetActionContext) async throws {}
@@ -219,7 +466,7 @@ final class AcceptanceHostAppDelegate: UIResponder, UIApplicationDelegate {
     Task { [weak self] in
       do {
         let started = try await AppPilotKitTargetTransport.startFromEnvironment(
-          compositionFactory: makeFoundationComposition
+          compositionFactory: makeDemoCatalogComposition
         )
         guard let self, self.lifecycle.didStart() else {
           await started.stop()
