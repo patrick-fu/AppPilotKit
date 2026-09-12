@@ -432,6 +432,7 @@ fn package_install_and_activity_start_fail_closed() {
         vec![
             ok(&["help"], "forward tcp:0 localabstract:\n"),
             ok(&["get-state"], "device\n"),
+            ok(&["shell", "am", "force-stop", PACKAGE], ""),
             fail(
                 &["install", "-r", "-t", SNAPSHOT_ARG],
                 PlatformFailureKind::Unavailable,
@@ -440,6 +441,7 @@ fn package_install_and_activity_start_fail_closed() {
         vec![
             ok(&["help"], "forward tcp:0 localabstract:\n"),
             ok(&["get-state"], "device\n"),
+            ok(&["shell", "am", "force-stop", PACKAGE], ""),
             ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
             ok(
                 &[
@@ -472,6 +474,58 @@ fn package_install_and_activity_start_fail_closed() {
 }
 
 #[test]
+fn replacement_stops_the_selected_app_before_install_and_preserves_launch_deadline() {
+    let artifact = TestArtifact::real();
+    let launch_deadline = deadline();
+    let runner = MockRunner::new(vec![
+        ok(&["help"], "forward tcp:0 localabstract:\n"),
+        ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
+        fail(
+            &["install", "-r", "-t", SNAPSHOT_ARG],
+            PlatformFailureKind::Unavailable,
+        ),
+    ]);
+    let adapter = AndroidEmulatorAdapter::with_runner("/fake/adb", runner.clone());
+    let error = adapter
+        .begin_launch(selection_for_artifact(&artifact), launch_deadline)
+        .launch(descriptor(), Cancellation::new(), launch_deadline)
+        .err()
+        .expect("install failure");
+    assert_eq!(error.kind(), PlatformFailureKind::Unavailable);
+    runner.assert_consumed();
+    assert!(
+        runner
+            .deadlines
+            .lock()
+            .expect("deadlines")
+            .iter()
+            .all(|value| *value == launch_deadline.value())
+    );
+}
+
+#[test]
+fn replacement_does_not_install_or_launch_when_selected_app_stop_fails() {
+    let artifact = TestArtifact::real();
+    let runner = MockRunner::new(vec![
+        ok(&["help"], "forward tcp:0 localabstract:\n"),
+        ok(&["get-state"], "device\n"),
+        fail(
+            &["shell", "am", "force-stop", PACKAGE],
+            PlatformFailureKind::TimedOut,
+        ),
+    ]);
+    let adapter = AndroidEmulatorAdapter::with_runner("/fake/adb", runner.clone());
+    let error = adapter
+        .begin_launch(selection_for_artifact(&artifact), deadline())
+        .launch(descriptor(), Cancellation::new(), deadline())
+        .err()
+        .expect("stop failure");
+    assert_eq!(error.kind(), PlatformFailureKind::TimedOut);
+    runner.assert_consumed();
+}
+
+#[test]
 fn start_side_effect_list_timeout_force_stops_only_the_expected_package_without_creating_a_forward()
 {
     let artifact = TestArtifact::real();
@@ -481,6 +535,7 @@ fn start_side_effect_list_timeout_force_stops_only_the_expected_package_without_
     let runner = MockRunner::new(vec![
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
         ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
         ok(
             &[
@@ -513,11 +568,11 @@ fn start_side_effect_list_timeout_force_stops_only_the_expected_package_without_
     runner.assert_consumed();
     let deadlines = runner.deadlines.lock().expect("deadlines");
     assert!(
-        deadlines[..5]
+        deadlines[..6]
             .iter()
             .all(|value| *value == launch_deadline.value())
     );
-    assert_ne!(deadlines[5], launch_deadline.value());
+    assert_ne!(deadlines[6], launch_deadline.value());
 }
 
 #[test]
@@ -529,6 +584,7 @@ fn start_side_effect_cleanup_failure_is_fail_closed_and_retains_the_timeout_prim
     let runner = MockRunner::new(vec![
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
         ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
         ok(
             &[
@@ -687,6 +743,30 @@ fn parsers_reject_malformed_ambiguous_and_partial_output() {
 }
 
 #[test]
+fn start_accepts_complete_api26_timing_transcript_without_launch_state() {
+    let legacy = format!(
+        "Stopping: {PACKAGE}\nStarting: Intent {{ cmp={COMPONENT} (has extras) }}\nStatus: ok\nActivity: {COMPONENT}\nThisTime: 84\nTotalTime: 84\nWaitTime: 93\nComplete\n"
+    );
+    assert!(parse_start(&legacy, COMPONENT).is_ok());
+    for invalid in [
+        legacy.replace("ThisTime: 84\n", ""),
+        legacy.replace("TotalTime: 84\n", ""),
+        legacy.replace("WaitTime: 93\n", ""),
+        legacy.replace("ThisTime: 84", "ThisTime: -1"),
+        format!("LaunchState: COLD\n{legacy}"),
+        legacy.replace("ThisTime: 84\n", "ThisTime: 84\nThisTime: 84\n"),
+        legacy.replace("Status: ok", "Status: timeout"),
+        legacy.replace("Complete\n", ""),
+        legacy.replace(COMPONENT, "other/.Activity"),
+        format!(
+            "Warning: Activity not started, intent has been delivered to currently running top-most instance.\n{legacy}"
+        ),
+    ] {
+        assert!(parse_start(&invalid, COMPONENT).is_err(), "{invalid}");
+    }
+}
+
+#[test]
 fn start_transcript_requires_one_exact_supported_launch_state() {
     let cold = format!(
         "Stopping: {PACKAGE}\nStarting: Intent {{ cmp={COMPONENT} (has extras) }}\nStatus: ok\nLaunchState: COLD\nActivity: {COMPONENT}\nTotalTime: 1\nWaitTime: 2\nComplete\n"
@@ -728,6 +808,7 @@ fn malformed_forward_port_removes_only_the_mapping_created_by_this_launch() {
     let runner = MockRunner::new(vec![
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
         ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
         ok(
             &[
@@ -781,12 +862,12 @@ fn malformed_forward_port_removes_only_the_mapping_created_by_this_launch() {
     runner.assert_consumed();
     let deadlines = runner.deadlines.lock().expect("deadlines");
     assert!(
-        deadlines[..6]
+        deadlines[..7]
             .iter()
             .all(|value| *value == launch_deadline.value())
     );
-    assert!(deadlines[6..].iter().all(|value| *value == deadlines[6]));
-    assert_ne!(deadlines[6], launch_deadline.value());
+    assert!(deadlines[7..].iter().all(|value| *value == deadlines[7]));
+    assert_ne!(deadlines[7], launch_deadline.value());
 }
 
 #[test]
@@ -804,6 +885,7 @@ fn timed_out_or_cancelled_forward_preserves_kind_after_independent_rollback() {
         let runner = MockRunner::new(vec![
             ok(&["help"], "forward tcp:0 localabstract:\n"),
             ok(&["get-state"], "device\n"),
+            ok(&["shell", "am", "force-stop", PACKAGE], ""),
             ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
             ok(
                 &[
@@ -857,12 +939,12 @@ fn timed_out_or_cancelled_forward_preserves_kind_after_independent_rollback() {
         runner.assert_consumed();
         let deadlines = runner.deadlines.lock().expect("deadlines");
         assert!(
-            deadlines[..6]
+            deadlines[..7]
                 .iter()
                 .all(|value| *value == launch_deadline.value())
         );
-        assert!(deadlines[6..].iter().all(|value| *value == deadlines[6]));
-        assert_ne!(deadlines[6], launch_deadline.value());
+        assert!(deadlines[7..].iter().all(|value| *value == deadlines[7]));
+        assert_ne!(deadlines[7], launch_deadline.value());
     }
 }
 
@@ -883,6 +965,7 @@ fn verified_forward_connect_timeout_removes_only_the_exact_mapping_and_keeps_pri
     let runner = MockRunner::new(vec![
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
         ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
         ok(
             &[
@@ -935,12 +1018,12 @@ fn verified_forward_connect_timeout_removes_only_the_exact_mapping_and_keeps_pri
     runner.assert_consumed();
     let deadlines = runner.deadlines.lock().expect("deadlines");
     assert!(
-        deadlines[..7]
+        deadlines[..8]
             .iter()
             .all(|value| *value == launch_deadline.value())
     );
-    assert!(deadlines[7..].iter().all(|value| *value == deadlines[7]));
-    assert_ne!(deadlines[7], launch_deadline.value());
+    assert!(deadlines[8..].iter().all(|value| *value == deadlines[8]));
+    assert_ne!(deadlines[8], launch_deadline.value());
 }
 
 #[test]
@@ -958,6 +1041,7 @@ fn failed_connect_rollback_keeps_the_timeout_primary_while_marking_cleanup_faile
     let runner = MockRunner::new(vec![
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
+        ok(&["shell", "am", "force-stop", PACKAGE], ""),
         ok(&["install", "-r", "-t", SNAPSHOT_ARG], "Success\n"),
         ok(
             &[
@@ -1122,7 +1206,7 @@ struct DynamicLifecycleRunner {
 
 impl DynamicLifecycleRunner {
     fn assert_complete_and_secret_free(&self) {
-        assert_eq!(*self.step.lock().expect("step"), 10);
+        assert_eq!(*self.step.lock().expect("step"), 11);
         let seen = self.seen.lock().expect("seen");
         let flattened = seen.concat().join("\n");
         assert!(!flattened.contains(SECRET_CANARY));
@@ -1131,10 +1215,10 @@ impl DynamicLifecycleRunner {
         assert!(!flattened.contains("session"));
         assert!(!flattened.contains("reverse"));
         assert!(!flattened.contains("--remove-all"));
-        let start = &seen[3];
+        let start = &seen[4];
         assert_eq!(start.iter().filter(|arg| *arg == "--es").count(), 1);
         assert!(!start.iter().any(|arg| arg.contains("localabstract")));
-        let snapshot = seen[2].last().expect("artifact snapshot");
+        let snapshot = seen[3].last().expect("artifact snapshot");
         assert_ne!(snapshot, &self.artifact_path);
         assert!(!Path::new(snapshot).exists());
     }
@@ -1174,6 +1258,10 @@ impl CommandRunner for DynamicLifecycleRunner {
                 b"device\n".to_vec()
             }
             2 => {
+                assert_eq!(args, vec!["shell", "am", "force-stop", PACKAGE]);
+                Vec::new()
+            }
+            3 => {
                 assert_eq!(&args[..3], &["install", "-r", "-t"]);
                 assert_ne!(args[3], self.artifact_path);
                 assert_eq!(
@@ -1184,7 +1272,7 @@ impl CommandRunner for DynamicLifecycleRunner {
                     .expect("replace source during install");
                 b"Performing Streamed Install\nSuccess\n".to_vec()
             }
-            3 => {
+            4 => {
                 assert_eq!(
                     &args[..8],
                     &["shell", "am", "start", "-W", "-S", "-n", COMPONENT, "--es"]
@@ -1196,26 +1284,26 @@ impl CommandRunner for DynamicLifecycleRunner {
                 )
                 .into_bytes()
             }
-            4 => {
+            5 => {
                 assert_eq!(args, vec!["forward", "--list"]);
                 Vec::new()
             }
-            5 => {
+            6 => {
                 assert_eq!(args, vec!["forward", "tcp:0", &remote]);
                 format!("{}\n", self.port).into_bytes()
             }
-            6 | 7 => {
+            7 | 8 => {
                 assert_eq!(args, vec!["forward", "--list"]);
                 mapping.into_bytes()
             }
-            8 => {
+            9 => {
                 assert_eq!(
                     args,
                     vec!["forward", "--remove", &format!("tcp:{}", self.port)]
                 );
                 Vec::new()
             }
-            9 => {
+            10 => {
                 assert_eq!(args, vec!["forward", "--list"]);
                 Vec::new()
             }

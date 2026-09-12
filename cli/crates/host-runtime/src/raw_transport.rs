@@ -779,8 +779,8 @@ fn core_failure_details(error: &apppilotkit_transport_crypto_core::Error) -> Tra
 
 fn endpoint_matches_platform(platform: Platform, endpoint: &LaunchEndpoint) -> bool {
     match platform {
-        Platform::IosSimulator => endpoint.ios_port().is_some(),
-        Platform::AndroidEmulator => endpoint.android_name().is_some(),
+        Platform::IosSimulator | Platform::IosDevice => endpoint.ios_port().is_some(),
+        Platform::AndroidEmulator | Platform::AndroidDevice => endpoint.android_name().is_some(),
     }
 }
 
@@ -801,16 +801,16 @@ pub(crate) fn encode_launch_descriptor(
     }
     let mut out = Vec::with_capacity(180);
     out.push(0xa9); // map(9), keys are written in ascending numeric order.
+    let (descriptor_version, platform_code) = match platform {
+        Platform::IosSimulator => (1, 0),
+        Platform::AndroidEmulator => (1, 1),
+        Platform::IosDevice => (2, 2),
+        Platform::AndroidDevice => (2, 3),
+    };
     cbor_uint(&mut out, 0);
+    cbor_uint(&mut out, descriptor_version);
     cbor_uint(&mut out, 1);
-    cbor_uint(&mut out, 1);
-    cbor_uint(
-        &mut out,
-        match platform {
-            Platform::IosSimulator => 0,
-            Platform::AndroidEmulator => 1,
-        },
-    );
+    cbor_uint(&mut out, platform_code);
     cbor_uint(&mut out, 2);
     cbor_bytes(&mut out, &lease_id);
     cbor_uint(&mut out, 3);
@@ -821,7 +821,7 @@ pub(crate) fn encode_launch_descriptor(
     cbor_bytes(&mut out, &broker_static_public);
     cbor_uint(&mut out, 6);
     match platform {
-        Platform::IosSimulator => {
+        Platform::IosSimulator | Platform::IosDevice => {
             out.push(0xa2);
             cbor_uint(&mut out, 0);
             cbor_text(&mut out, "127.0.0.1");
@@ -831,7 +831,7 @@ pub(crate) fn encode_launch_descriptor(
                 endpoint.ios_port().expect("validated platform") as u64,
             );
         }
-        Platform::AndroidEmulator => {
+        Platform::AndroidEmulator | Platform::AndroidDevice => {
             out.push(0xa1);
             cbor_uint(&mut out, 0);
             cbor_text(
@@ -897,6 +897,7 @@ mod tests {
 
     use super::*;
     use crate::adapter::{CleanupReceipt, PlatformFailure, PlatformFailureKind};
+    use minicbor::Decoder;
 
     struct MemoryRaw {
         incoming: Arc<(Mutex<VecDeque<u8>>, Condvar)>,
@@ -1660,6 +1661,67 @@ mod tests {
         );
         let expected = json_string(vector, "launch_descriptor_cbor_hex");
         assert_eq!(hex(&encoded), expected);
+    }
+
+    #[test]
+    fn physical_ios_descriptor_is_v2_platform_2_with_loopback_endpoint() {
+        let encoded = encode_launch_descriptor(
+            Platform::IosDevice,
+            &platform_ok(LaunchEndpoint::ios_loopback(55_001)),
+            [0x51; 16],
+            [0x71; 32],
+            [0x81; 32],
+            hex32("7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"),
+            1_893_456_000_000,
+            hex32("791b63ed11406e77475fafbf092c8dc786d728ed0773d7662373741dea079404"),
+        )
+        .expect("physical iOS descriptor");
+        let mut decoder = Decoder::new(&encoded);
+        assert_eq!(decoder.map().unwrap(), Some(9));
+        assert_eq!(decoder.u8().unwrap(), 0);
+        assert_eq!(decoder.u8().unwrap(), 2);
+        assert_eq!(decoder.u8().unwrap(), 1);
+        assert_eq!(decoder.u8().unwrap(), 2);
+        for expected_key in 2..=5u8 {
+            assert_eq!(decoder.u8().unwrap(), expected_key);
+            decoder.skip().unwrap();
+        }
+        assert_eq!(decoder.u8().unwrap(), 6);
+        assert_eq!(decoder.map().unwrap(), Some(2));
+        assert_eq!(decoder.u8().unwrap(), 0);
+        assert_eq!(decoder.str().unwrap(), "127.0.0.1");
+        assert_eq!(decoder.u8().unwrap(), 1);
+        assert_eq!(decoder.u16().unwrap(), 55_001);
+    }
+
+    #[test]
+    fn physical_android_descriptor_is_v2_platform_3_with_localabstract() {
+        let name = "apppilotkit-android-bootstrap-0123456789abcdef";
+        let encoded = encode_launch_descriptor(
+            Platform::AndroidDevice,
+            &platform_ok(LaunchEndpoint::android_local_abstract(name.to_owned())),
+            [0x51; 16],
+            [0x71; 32],
+            [0x81; 32],
+            hex32("7b4e909bbe7ffe44c465a220037d608ee35897d31ef972f07f74892cb0f73f13"),
+            1_893_456_000_000,
+            hex32("791b63ed11406e77475fafbf092c8dc786d728ed0773d7662373741dea079404"),
+        )
+        .expect("physical Android descriptor");
+        let mut decoder = Decoder::new(&encoded);
+        assert_eq!(decoder.map().unwrap(), Some(9));
+        assert_eq!(decoder.u8().unwrap(), 0);
+        assert_eq!(decoder.u8().unwrap(), 2);
+        assert_eq!(decoder.u8().unwrap(), 1);
+        assert_eq!(decoder.u8().unwrap(), 3);
+        for expected_key in 2..=5u8 {
+            assert_eq!(decoder.u8().unwrap(), expected_key);
+            decoder.skip().unwrap();
+        }
+        assert_eq!(decoder.u8().unwrap(), 6);
+        assert_eq!(decoder.map().unwrap(), Some(1));
+        assert_eq!(decoder.u8().unwrap(), 0);
+        assert_eq!(decoder.str().unwrap(), name);
     }
 
     #[test]

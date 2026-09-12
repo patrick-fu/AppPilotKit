@@ -1,49 +1,47 @@
-# Android Acceptance Host
+# Android Acceptance Host — Journey7
 
-The Debug APK is the repository-owned Android fixture for the shared
-`demo.foundation` Emulator journey. Its only semantic capability is the
-read-only `acceptance.foundation.state` Resource at declaration revision `1`.
-Each cold process creates the fixed Android value
-`{"scenario":"demo.foundation","seed":"foundation-v1","platform":"android"}`.
+The Debug APK is the repository-owned Android fixture for the installed-CLI
+`demo.catalog` Journey7 Emulator journey. Its catalog contains exactly three
+declaration-revision-1 capabilities: the read-only Resource
+`acceptance.catalog.state`, ordinary Action `acceptance.catalog.increment`, and
+destructive Action `acceptance.catalog.reset`.
 
-Build the Debug fixture and prove the separate Release artifact has no
-transport, bootstrap, or native marker:
+Availability is dynamic while catalog membership stays fixed. The resource is
+available initially, unavailable after the first ordinary increment, and
+available again after the second. Destructive reset requires an authorization
+bound to the current Target process; this fixture denies destructive grants.
+Restarting the process changes catalog generation, restores seed `catalog-v1`,
+clears ordinary history, and invalidates old Target/session identifiers.
+Schema-mismatch, undeclared, oversized, unauthorized, unclassified,
+and disclosure-limit fixtures must fail closed before side effects; the fixed
+secret canary must not enter public evidence.
+
+The Journey script pins the host-local isolated Rust 1.94.0 toolchain
+(`RUSTUP_HOME`, `CARGO_HOME`, `RUSTUP_TOOLCHAIN`, `PATH`, `CARGO`, and `RUSTC`)
+and checks both `aarch64-linux-android` and `x86_64-linux-android` targets
+before Gradle starts. Build the Debug fixture and verify Release exclusion
+with:
 
 ```shell
 JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew --no-daemon --max-workers=1 \
   :acceptance-host:verifyAcceptanceHostArtifacts
 ```
 
-The Emulator journey launches the Debug-only exported
-`dev.apppilotkit.acceptancehost.AppPilotKitBootstrapActivity` with the private
-transport descriptor extra. Release contains no such Activity or transport edge.
-
-Run the installed-CLI Emulator journey with exactly one online Android Emulator
-(or pass its serial explicitly when more than one is online):
+Run the installed-CLI Emulator Journey7 path with exactly one online Emulator
+(or pass its serial explicitly):
 
 ```shell
-Scripts/run-emulator-journey.sh [emulator-serial]
-```
-
-Rust-dependent Android builds use `CARGO` when it is set, otherwise the
-`cargo` found on `PATH`. `RUSTUP_HOME`, `CARGO_HOME`, and `RUSTC` are passed
-through to both the installed CLI build and Gradle's Rust FFI tasks, so an
-isolated rustup installation can be selected without changing a user's default
-toolchain:
-
-```shell
-CARGO=/path/to/cargo \
-RUSTUP_HOME=/path/to/rustup \
-CARGO_HOME=/path/to/cargo-home \
-RUSTC=/path/to/rustc \
 Scripts/run-emulator-journey.sh [emulator-serial]
 ```
 
 The script builds the Debug APK, stages one temporary installed CLI/Broker
-prefix, writes the six-field Android prepare request with the exact APK and
-serial, then invokes the shared harness. It retains its generated configuration
-and evidence in the printed temporary directory. The restart callback is the
-staged `<prefix>/libexec/apppilotkit-target-prepare --release-fd=0
---output=json`, which receives the old opaque Target only on stdin; its output
-is validated as the private release Machine Result, never as public journey
-evidence.
+prefix, writes the exact Android prepare request, invokes
+`acceptance/demo-catalog.contract.json` through the shared harness, and retains
+the generated config/evidence in the printed temporary directory. Evidence is
+public and redacted; the private release Machine Result is validated separately.
+Rust-dependent builds honor `CARGO`, `RUSTUP_HOME`, `CARGO_HOME`, and `RUSTC`.
+
+Release contains no exported Acceptance Host activity or transport edge. The
+older `demo.foundation` fixture/tests remain supported as historical
+compatibility assets, but are not the Journey7 scenario. This README does not
+claim that every Android/device matrix has passed.

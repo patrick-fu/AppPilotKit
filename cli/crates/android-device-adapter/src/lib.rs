@@ -1,10 +1,11 @@
-//! Exact-serial Android Emulator adapter for the publish-disabled Host raw SPI.
+//! Exact-serial Android physical-device adapter for the publish-disabled Host raw SPI.
 
 mod apk;
 mod process;
 mod raw;
 
 use std::{
+    env,
     ffi::OsString,
     fs::{self, DirBuilder, File, OpenOptions},
     io::{Read, Write},
@@ -35,16 +36,25 @@ const DESCRIPTOR_LIMIT: usize = 4 * 1024;
 const ARTIFACT_LIMIT: u64 = 1024 * 1024 * 1024;
 const FORWARD_ROLLBACK_MS: u64 = 2_000;
 
-/// Adapter for exactly one caller-selected Android Emulator Target at a time.
-pub struct AndroidEmulatorAdapter {
-    adb_path: PathBuf,
+/// Adapter for exactly one caller-selected Android physical Target at a time.
+pub struct AndroidDeviceAdapter {
+    adb_path: Option<PathBuf>,
     runner: Arc<dyn CommandRunner>,
 }
 
-impl AndroidEmulatorAdapter {
+impl AndroidDeviceAdapter {
     pub fn new(adb_path: impl Into<PathBuf>) -> Self {
         Self {
-            adb_path: adb_path.into(),
+            adb_path: Some(adb_path.into()),
+            runner: Arc::new(SystemCommandRunner),
+        }
+    }
+
+    /// Resolves `adb` only when a physical Android Target is launched so an
+    /// iOS-only host can still construct the production Broker.
+    pub fn production() -> Self {
+        Self {
+            adb_path: None,
             runner: Arc::new(SystemCommandRunner),
         }
     }
@@ -52,25 +62,32 @@ impl AndroidEmulatorAdapter {
     #[cfg(test)]
     fn with_runner(adb_path: impl Into<PathBuf>, runner: Arc<dyn CommandRunner>) -> Self {
         Self {
-            adb_path: adb_path.into(),
+            adb_path: Some(adb_path.into()),
             runner,
         }
     }
 }
 
-impl PlatformTargetAdapter for AndroidEmulatorAdapter {
+impl PlatformTargetAdapter for AndroidDeviceAdapter {
     fn begin_launch(
         &self,
         selection: TargetSelection,
         deadline: AbsoluteDeadline,
     ) -> Box<dyn PendingLaunch> {
+        let adb_path = match &self.adb_path {
+            Some(path) => path.clone(),
+            None => match resolve_production_adb() {
+                Ok(path) => path,
+                Err(_) => return Box::new(UnavailableAndroidLaunch::new()),
+            },
+        };
         let (localabstract, random_failure) = random_localabstract();
-        let validation = validate_selection(&selection, &self.adb_path, deadline)
+        let validation = validate_selection(&selection, &adb_path, deadline)
             .and(random_failure.map_or(Ok(()), Err));
         let endpoint = LaunchEndpoint::android_local_abstract(localabstract.clone())
             .unwrap_or_else(|_| unreachable!("adapter-generated endpoint is valid"));
-        Box::new(AndroidPendingLaunch {
-            adb_path: self.adb_path.clone(),
+        Box::new(AndroidDevicePendingLaunch {
+            adb_path,
             runner: Arc::clone(&self.runner),
             serial: selection.device_selector().to_owned(),
             package: selection.app_id().to_owned(),
@@ -83,7 +100,7 @@ impl PlatformTargetAdapter for AndroidEmulatorAdapter {
     }
 }
 
-struct AndroidPendingLaunch {
+struct AndroidDevicePendingLaunch {
     adb_path: PathBuf,
     runner: Arc<dyn CommandRunner>,
     serial: String,
@@ -95,7 +112,7 @@ struct AndroidPendingLaunch {
     validation: Option<PlatformFailureKind>,
 }
 
-impl PendingLaunch for AndroidPendingLaunch {
+impl PendingLaunch for AndroidDevicePendingLaunch {
     fn endpoint(&self) -> &LaunchEndpoint {
         &self.endpoint
     }
@@ -125,26 +142,74 @@ impl PendingLaunch for AndroidPendingLaunch {
             &cancellation,
             deadline,
         )?;
+        let mut attempted_install = false;
         let install = (|| {
             client.probe(&cancellation, deadline)?;
             client.require_online(&cancellation, deadline)?;
-            // Package replacement of a foreground app can make SystemUI
-            // relaunch it after am start -S, racing the bootstrap descriptor.
-            client.force_stop(&self.package, &cancellation, deadline)?;
+            client.require_usb_transport(&cancellation, deadline)?;
+            if client.package_present(&self.package, &cancellation, deadline)? {
+                // The on-device APK cannot be hashed, so a present package is
+                // not identity-equivalent to this Host artifact.
+                return Err(failure(PlatformFailureKind::Rejected));
+            }
+            attempted_install = true;
             client.install(&snapshot.path, &cancellation, deadline)
         })();
         let snapshot_cleanup = snapshot.cleanup();
         if snapshot_cleanup.is_err() {
             return Err(failure(PlatformFailureKind::CleanupFailed));
         }
-        install?;
+        if let Err(original) = install {
+            return Err(if attempted_install {
+                revert_failed_install(&client, &self.package, original)
+            } else {
+                original
+            });
+        }
+
+        if let Err(original) = client.force_stop(&self.package, &cancellation, deadline) {
+            return Err(revert_failed_install(&client, &self.package, original));
+        }
+        if let Err(original) = client.require_pid_absent(&self.package, &cancellation, deadline) {
+            return Err(revert_failed_install(&client, &self.package, original));
+        }
+
         let component = format!("{}{BOOTSTRAP_ACTIVITY}", self.package);
         let encoded = URL_SAFE_NO_PAD.encode(descriptor.canonical_bytes());
-        client.start(&component, &encoded, &cancellation, deadline)?;
+        if let Err(original) = client.start(&component, &encoded, &cancellation, deadline) {
+            return rollback_after_started(
+                original,
+                &client,
+                &self.package,
+                None,
+                true,
+                |_| Ok(()),
+            );
+        }
+        let pid = match client.prove_launch_pid(&self.package, &cancellation, deadline) {
+            Ok(pid) => pid,
+            Err(original) => {
+                return rollback_after_started(
+                    original,
+                    &client,
+                    &self.package,
+                    None,
+                    true,
+                    |_| Ok(()),
+                );
+            }
+        };
         if let Err(original) =
             client.require_remote_absent(&self.localabstract, &cancellation, deadline)
         {
-            return rollback_after_started(original, &client, &self.package, |_| Ok(()));
+            return rollback_after_started(
+                original,
+                &client,
+                &self.package,
+                Some(pid),
+                true,
+                |_| Ok(()),
+            );
         }
 
         let port = match client.create_forward(&self.localabstract, &cancellation, deadline) {
@@ -154,6 +219,8 @@ impl PendingLaunch for AndroidPendingLaunch {
                     original,
                     &client,
                     &self.package,
+                    Some(pid),
+                    true,
                     |cleanup_deadline| {
                         client.remove_by_remote(&self.localabstract, cleanup_deadline)
                     },
@@ -163,9 +230,14 @@ impl PendingLaunch for AndroidPendingLaunch {
         if let Err(original) =
             client.require_exact_forward(port, &self.localabstract, &cancellation, deadline)
         {
-            return rollback_after_started(original, &client, &self.package, |cleanup_deadline| {
-                client.remove_exact(port, &self.localabstract, cleanup_deadline)
-            });
+            return rollback_after_started(
+                original,
+                &client,
+                &self.package,
+                Some(pid),
+                true,
+                |cleanup_deadline| client.remove_exact(port, &self.localabstract, cleanup_deadline),
+            );
         }
 
         let bootstrap = match raw::connect(port, &cancellation, deadline) {
@@ -175,6 +247,8 @@ impl PendingLaunch for AndroidPendingLaunch {
                     original,
                     &client,
                     &self.package,
+                    Some(pid),
+                    true,
                     |cleanup_deadline| {
                         client.remove_exact(port, &self.localabstract, cleanup_deadline)
                     },
@@ -182,12 +256,15 @@ impl PendingLaunch for AndroidPendingLaunch {
             }
         };
         let connector: Arc<dyn RawConnector> = Arc::new(LoopbackConnector::new(port));
-        let cleanup = Box::new(AndroidCleanup {
+        let cleanup = Box::new(AndroidDeviceCleanup {
             adb_path: self.adb_path.clone(),
             runner: Arc::clone(&self.runner),
             serial: self.serial.clone(),
+            package: self.package.clone(),
             localabstract: self.localabstract.clone(),
             port,
+            pid,
+            installed_by_lease: true,
         });
         Ok(LaunchedTargetIo::new(bootstrap, connector, cleanup))
     }
@@ -212,33 +289,62 @@ fn rollback_after(
     Err(result)
 }
 
-/// Once `am start` confirms this launch, any later setup failure must leave
-/// that exact app process stopped. The cleanup deadline is intentionally
-/// independent of the expired launch deadline; a failed forward cleanup does
-/// not skip the process cleanup.
 fn rollback_after_started(
     original: PlatformFailure,
     client: &AdbClient<'_>,
     package: &str,
+    pid: Option<u32>,
+    installed_by_lease: bool,
     remove_forward: impl FnOnce(AbsoluteDeadline) -> Result<(), PlatformFailure>,
 ) -> Result<LaunchedTargetIo, PlatformFailure> {
     rollback_after(original, || {
         let cleanup_deadline = rollback_deadline()?;
+        let cancellation = Cancellation::new();
         let forward = remove_forward(cleanup_deadline);
-        let stopped = client.force_stop(package, &Cancellation::new(), cleanup_deadline);
-        forward.and(stopped)
+        let stopped = match pid {
+            Some(pid) => client.terminate_owned_pid(package, pid, &cancellation, cleanup_deadline),
+            None => client.require_absent_for_uninstall(package, &cancellation, cleanup_deadline),
+        };
+        let uninstalled = if installed_by_lease {
+            client.uninstall_owned(package, &cancellation, cleanup_deadline)
+        } else {
+            Ok(())
+        };
+        forward.and(stopped).and(uninstalled)
     })
 }
 
-struct AndroidCleanup {
+fn revert_failed_install(
+    client: &AdbClient<'_>,
+    package: &str,
+    original: PlatformFailure,
+) -> PlatformFailure {
+    let Ok(deadline) = rollback_deadline() else {
+        return failure(PlatformFailureKind::CleanupFailed);
+    };
+    let cancellation = Cancellation::new();
+    if client
+        .uninstall_owned(package, &cancellation, deadline)
+        .is_ok()
+    {
+        original
+    } else {
+        failure(PlatformFailureKind::CleanupFailed)
+    }
+}
+
+struct AndroidDeviceCleanup {
     adb_path: PathBuf,
     runner: Arc<dyn CommandRunner>,
     serial: String,
+    package: String,
     localabstract: String,
     port: u16,
+    pid: u32,
+    installed_by_lease: bool,
 }
 
-impl CleanupReceipt for AndroidCleanup {
+impl CleanupReceipt for AndroidDeviceCleanup {
     fn cleanup(
         self: Box<Self>,
         cancellation: Cancellation,
@@ -251,7 +357,50 @@ impl CleanupReceipt for AndroidCleanup {
         };
         client
             .remove_exact_with_cancellation(self.port, &self.localabstract, &cancellation, deadline)
-            .map_err(|_| failure(PlatformFailureKind::CleanupFailed))
+            .map_err(|_| failure(PlatformFailureKind::CleanupFailed))?;
+        client.terminate_owned_pid(&self.package, self.pid, &cancellation, deadline)?;
+        if self.installed_by_lease {
+            client.uninstall_owned(&self.package, &cancellation, deadline)?;
+        }
+        Ok(())
+    }
+}
+
+struct UnavailableAndroidLaunch {
+    endpoint: LaunchEndpoint,
+}
+
+impl UnavailableAndroidLaunch {
+    fn new() -> Self {
+        Self {
+            endpoint: LaunchEndpoint::android_local_abstract(
+                "apppilotkit-android-adb-unavailable".to_owned(),
+            )
+            .unwrap_or_else(|_| unreachable!("constant Android endpoint is valid")),
+        }
+    }
+}
+
+impl PendingLaunch for UnavailableAndroidLaunch {
+    fn endpoint(&self) -> &LaunchEndpoint {
+        &self.endpoint
+    }
+
+    fn launch(
+        self: Box<Self>,
+        _descriptor: PublicLaunchDescriptor,
+        _cancellation: Cancellation,
+        _deadline: AbsoluteDeadline,
+    ) -> Result<LaunchedTargetIo, PlatformFailure> {
+        Err(failure(PlatformFailureKind::Unavailable))
+    }
+
+    fn abort(
+        self: Box<Self>,
+        _cancellation: Cancellation,
+        _deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        Ok(())
     }
 }
 
@@ -268,17 +417,45 @@ impl AdbClient<'_> {
         cancellation: &Cancellation,
         deadline: AbsoluteDeadline,
     ) -> Result<String, PlatformFailure> {
-        let ProcessOutput { stdout, stderr } = self.runner.run(
+        let output = self.invoke(arguments, cancellation, deadline)?;
+        if !output.success {
+            return Err(failure(PlatformFailureKind::Unavailable));
+        }
+        decode_stdout(output)
+    }
+
+    fn run_query(
+        &self,
+        arguments: &[OsString],
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<String, PlatformFailure> {
+        let output = self.invoke(arguments, cancellation, deadline)?;
+        let success = output.success;
+        let stdout = decode_stdout(output)?;
+        if success {
+            return Ok(stdout);
+        }
+        if strip_one_line_ending(&stdout)?.is_empty() {
+            Ok(String::new())
+        } else {
+            Err(failure(PlatformFailureKind::Unavailable))
+        }
+    }
+
+    fn invoke(
+        &self,
+        arguments: &[OsString],
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<ProcessOutput, PlatformFailure> {
+        self.runner.run(
             self.executable,
             self.serial,
             arguments,
             cancellation,
             deadline,
-        )?;
-        if !benign_stderr(&stderr) {
-            return Err(failure(PlatformFailureKind::Rejected));
-        }
-        String::from_utf8(stdout).map_err(|_| failure(PlatformFailureKind::Rejected))
+        )
     }
 
     fn probe(
@@ -303,6 +480,133 @@ impl AdbClient<'_> {
         require_exact_line(&output, "device")
     }
 
+    fn require_usb_transport(
+        &self,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        let output = self.run(&strings(&["devices", "-l"]), cancellation, deadline)?;
+        parse_devices_l_usb(&output, self.serial)
+    }
+
+    fn package_present(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<bool, PlatformFailure> {
+        // `pm path <package>` is exact; `pm list packages <filter>` is substring.
+        let output = self.run_query(
+            &strings(&["shell", "pm", "path", package]),
+            cancellation,
+            deadline,
+        )?;
+        parse_package_path(&output)
+    }
+
+    fn pidof(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<Vec<u32>, PlatformFailure> {
+        let output = self.run_query(
+            &strings(&["shell", "pidof", package]),
+            cancellation,
+            deadline,
+        )?;
+        parse_pidof(&output)
+    }
+
+    fn require_pid_absent(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        if self.pidof(package, cancellation, deadline)?.is_empty() {
+            Ok(())
+        } else {
+            Err(failure(PlatformFailureKind::Rejected))
+        }
+    }
+
+    fn prove_launch_pid(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<u32, PlatformFailure> {
+        let pids = self.pidof(package, cancellation, deadline)?;
+        match pids.as_slice() {
+            [pid] => Ok(*pid),
+            _ => Err(failure(PlatformFailureKind::Rejected)),
+        }
+    }
+
+    fn terminate_owned_pid(
+        &self,
+        package: &str,
+        pid: u32,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        let pids = self
+            .pidof(package, cancellation, deadline)
+            .map_err(into_cleanup_failed)?;
+        if !pids.contains(&pid) {
+            return if pids.is_empty() {
+                Ok(())
+            } else {
+                Err(failure(PlatformFailureKind::CleanupFailed))
+            };
+        }
+        if pids.as_slice() != [pid] {
+            return Err(failure(PlatformFailureKind::CleanupFailed));
+        }
+        self.force_stop(package, cancellation, deadline)
+            .map_err(into_cleanup_failed)?;
+        let after = self
+            .pidof(package, cancellation, deadline)
+            .map_err(into_cleanup_failed)?;
+        if after.is_empty() {
+            Ok(())
+        } else {
+            Err(failure(PlatformFailureKind::CleanupFailed))
+        }
+    }
+
+    fn require_absent_for_uninstall(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        match self.pidof(package, cancellation, deadline) {
+            Ok(pids) if pids.is_empty() => Ok(()),
+            _ => Err(failure(PlatformFailureKind::CleanupFailed)),
+        }
+    }
+
+    fn uninstall_owned(
+        &self,
+        package: &str,
+        cancellation: &Cancellation,
+        deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        self.require_absent_for_uninstall(package, cancellation, deadline)?;
+        let present = self
+            .package_present(package, cancellation, deadline)
+            .map_err(into_cleanup_failed)?;
+        if !present {
+            return Ok(());
+        }
+        let output = self
+            .run(&strings(&["uninstall", package]), cancellation, deadline)
+            .map_err(into_cleanup_failed)?;
+        parse_install(&output).map_err(into_cleanup_failed)
+    }
+
     fn install(
         &self,
         artifact: &Path,
@@ -311,7 +615,6 @@ impl AdbClient<'_> {
     ) -> Result<(), PlatformFailure> {
         let arguments = vec![
             OsString::from("install"),
-            OsString::from("-r"),
             OsString::from("-t"),
             artifact.as_os_str().to_owned(),
         ];
@@ -498,6 +801,13 @@ struct ForwardEntry {
     remote: String,
 }
 
+fn decode_stdout(output: ProcessOutput) -> Result<String, PlatformFailure> {
+    if !benign_stderr(&output.stderr) {
+        return Err(failure(PlatformFailureKind::Rejected));
+    }
+    String::from_utf8(output.stdout).map_err(|_| failure(PlatformFailureKind::Rejected))
+}
+
 fn parse_forward_list(output: &str) -> Result<Vec<ForwardEntry>, PlatformFailure> {
     let normalized = normalize_forward_list(output)?;
     if normalized.is_empty() {
@@ -625,6 +935,114 @@ fn unknown_launch_state(line: &str) -> bool {
         .is_some_and(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
+fn parse_package_path(output: &str) -> Result<bool, PlatformFailure> {
+    let value = strip_one_line_ending(output)?;
+    if value.is_empty() {
+        return Ok(false);
+    }
+    let mut present = false;
+    for line in value.split('\n') {
+        let Some(path) = line.strip_prefix("package:") else {
+            return Err(failure(PlatformFailureKind::Rejected));
+        };
+        if !path.starts_with('/')
+            || path.len() < 2
+            || !path.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err(failure(PlatformFailureKind::Rejected));
+        }
+        present = true;
+    }
+    Ok(present)
+}
+
+fn parse_pidof(output: &str) -> Result<Vec<u32>, PlatformFailure> {
+    let value = strip_one_line_ending(output)?;
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut pids = Vec::new();
+    for field in value.split(' ') {
+        if field.is_empty() {
+            return Err(failure(PlatformFailureKind::Rejected));
+        }
+        let pid = field
+            .parse::<u32>()
+            .ok()
+            .filter(|pid| *pid > 0)
+            .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+        if pids.contains(&pid) {
+            return Err(failure(PlatformFailureKind::Rejected));
+        }
+        pids.push(pid);
+    }
+    Ok(pids)
+}
+
+fn parse_devices_l_usb(output: &str, serial: &str) -> Result<(), PlatformFailure> {
+    let value = strip_one_line_ending(output)?;
+    let rest = value
+        .strip_prefix("List of devices attached")
+        .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+    let rest = rest
+        .strip_prefix("\r\n")
+        .or_else(|| rest.strip_prefix('\n'))
+        .unwrap_or(rest);
+    if rest.is_empty() {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    let mut matches = 0_u8;
+    let mut usb_ok = false;
+    for line in rest.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            continue;
+        }
+        let Some((found, tail)) = line.split_once(|byte: char| byte.is_ascii_whitespace()) else {
+            return Err(failure(PlatformFailureKind::Rejected));
+        };
+        if found != serial {
+            continue;
+        }
+        matches = matches
+            .checked_add(1)
+            .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+        let tail = tail.trim_start();
+        let mut fields = tail.split_whitespace();
+        let state = fields
+            .next()
+            .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+        if state != "device" {
+            return Err(failure(PlatformFailureKind::Unavailable));
+        }
+        let mut saw_usb = false;
+        for field in fields {
+            let Some((key, val)) = field.split_once(':') else {
+                return Err(failure(PlatformFailureKind::Rejected));
+            };
+            if val.is_empty() || !val.bytes().all(|byte| byte.is_ascii_graphic()) {
+                return Err(failure(PlatformFailureKind::Rejected));
+            }
+            match key {
+                "usb" => saw_usb = true,
+                "product" | "model" | "device" | "transport_id" => {}
+                _ => return Err(failure(PlatformFailureKind::Rejected)),
+            }
+        }
+        usb_ok = saw_usb;
+    }
+    if matches == 0 {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    if matches != 1 {
+        return Err(failure(PlatformFailureKind::Rejected));
+    }
+    if !usb_ok {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    Ok(())
+}
+
 fn require_exact_line(output: &str, expected: &str) -> Result<(), PlatformFailure> {
     if strip_one_line_ending(output)? == expected {
         Ok(())
@@ -659,8 +1077,8 @@ fn validate_selection(
     adb_path: &Path,
     deadline: AbsoluteDeadline,
 ) -> Result<(), PlatformFailure> {
-    if selection.platform() != Platform::AndroidEmulator
-        || !android_emulator_serial(selection.device_selector())
+    if selection.platform() != Platform::AndroidDevice
+        || !android_usb_serial(selection.device_selector())
         || !android_package(selection.app_id())
         || adb_path.as_os_str().is_empty()
         || !Path::new(selection.artifact_path()).is_absolute()
@@ -671,11 +1089,39 @@ fn validate_selection(
     Ok(())
 }
 
-fn android_emulator_serial(value: &str) -> bool {
+fn android_usb_serial(value: &str) -> bool {
+    // Syntactic filter only. USB transport is proven later by `adb devices -l`
+    // `usb:`; wireless/TCP serials can look identical here.
     (1..=255).contains(&value.len())
-        && value
-            .strip_prefix("emulator-")
-            .is_some_and(|port| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+        && value.bytes().all(|byte| byte.is_ascii_graphic())
+        && !value.starts_with("emulator-")
+        && !is_coredevice_uuid(value)
+        && !is_ios_udid(value)
+}
+
+fn is_coredevice_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
+}
+
+fn is_ios_udid(value: &str) -> bool {
+    let dashed = value.len() == 25
+        && value.as_bytes().get(8) == Some(&b'-')
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if index == 8 {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        });
+    let classic = value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    dashed || classic
 }
 
 fn android_package(value: &str) -> bool {
@@ -695,6 +1141,38 @@ fn android_package(value: &str) -> bool {
 
 fn safe_tool_field(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_graphic())
+}
+
+fn resolve_production_adb() -> Result<PathBuf, PlatformFailure> {
+    if let Some(adb) = env::var_os("APPPILOTKIT_ANDROID_ADB") {
+        return resolve_adb_executable(Path::new(&adb));
+    }
+    let sdk_root = env::var_os("ANDROID_SDK_ROOT")
+        .or_else(|| env::var_os("ANDROID_HOME"))
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|home| home.is_absolute())
+                .map(|home| home.join("Library/Android/sdk"))
+        })
+        .ok_or_else(|| failure(PlatformFailureKind::Unavailable))?;
+    if !sdk_root.is_absolute() {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    resolve_adb_executable(&sdk_root.join("platform-tools/adb"))
+}
+
+fn resolve_adb_executable(adb: &Path) -> Result<PathBuf, PlatformFailure> {
+    if !adb.is_absolute() {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    let adb = fs::canonicalize(adb).map_err(|_| failure(PlatformFailureKind::Unavailable))?;
+    let metadata = fs::metadata(&adb).map_err(|_| failure(PlatformFailureKind::Unavailable))?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err(failure(PlatformFailureKind::Unavailable));
+    }
+    Ok(adb)
 }
 
 struct ArtifactSnapshot {
@@ -798,7 +1276,7 @@ fn create_snapshot_directory(
         getrandom::fill(&mut random).map_err(|_| failure(PlatformFailureKind::Internal))?;
         let suffix = hex(&random);
         let directory = std::env::temp_dir().join(format!(
-            "apppilotkit-android-adapter-{}-{suffix}",
+            "apppilotkit-android-device-adapter-{}-{suffix}",
             std::process::id()
         ));
         match DirBuilder::new().mode(0o700).create(&directory) {
@@ -875,6 +1353,14 @@ fn random_localabstract() -> (String, Option<PlatformFailure>) {
     name.push_str(LOCALABSTRACT_PREFIX);
     name.push_str(&hex(&random));
     (name, error)
+}
+
+fn into_cleanup_failed(error: PlatformFailure) -> PlatformFailure {
+    if error.kind() == PlatformFailureKind::CleanupFailed {
+        error
+    } else {
+        failure(PlatformFailureKind::CleanupFailed)
+    }
 }
 
 #[cfg(test)]

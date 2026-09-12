@@ -166,6 +166,48 @@ final class TargetTransportActorTests: XCTestCase {
     await transport.stop()
   }
 
+  func testIosDeviceEndpointReadyStartsLoopbackListener() async throws {
+    let supervisor = ScriptedSupervisor(
+      application: sessionOpenRequest(generation: 42),
+      platform: 2
+    )
+    let sockets = TestSocketHost()
+    let transport = AppPilotKitTargetTransport(
+      supervisor: supervisor,
+      sockets: sockets,
+      compositionFactory: { try makeComposition(generation: $0) },
+      initialOutcome: supervisor.initialOutcome
+    )
+
+    try await transport.activate()
+
+    XCTAssertEqual(sockets.startedPort, 55_001)
+    await transport.stop()
+  }
+
+  func testAndroidEndpointReadyIsRejectedBeforeStartingListener() async throws {
+    let supervisor = ScriptedSupervisor(
+      application: sessionOpenRequest(generation: 42),
+      platform: 1
+    )
+    let sockets = TestSocketHost()
+    let transport = AppPilotKitTargetTransport(
+      supervisor: supervisor,
+      sockets: sockets,
+      compositionFactory: { try makeComposition(generation: $0) },
+      initialOutcome: supervisor.initialOutcome
+    )
+
+    do {
+      try await transport.activate()
+      XCTFail("Expected Android endpoint to be rejected")
+    } catch let error as TargetTransportInternalError {
+      XCTAssertEqual(error, .unsupportedPlatform)
+    }
+
+    XCTAssertNil(sockets.startedPort)
+  }
+
   func testListenerFailureUsesAcceptedInternalErrorTerminal() async throws {
     let supervisor = ScriptedSupervisor(application: sessionOpenRequest(generation: 42))
     let sockets = TestSocketHost()
@@ -346,23 +388,24 @@ private final class ScriptedSupervisor: TargetTransportSupervising, @unchecked S
   private(set) var runtimeResponse: Data?
   private(set) var runtimeResponseCount = 0
 
-  let initialOutcome = SupervisorOutcome(
-    kind: UInt32(APK_TP_OUTCOME_ENDPOINT_READY),
-    flags: 0,
-    streamID: 0,
-    writeToken: 0,
-    bytes: nil,
-    value0: 0,
-    value1: 55_001,
-    nextDeadlineMilliseconds: 0,
-    closeReason: 0,
-    handoffState: 0,
-    peerCloseReason: nil,
-    peerHandoffState: nil
-  )
+  let initialOutcome: SupervisorOutcome
 
-  init(application: Data) {
+  init(application: Data, platform: UInt64 = 0) {
     self.application = application
+    initialOutcome = SupervisorOutcome(
+      kind: UInt32(APK_TP_OUTCOME_ENDPOINT_READY),
+      flags: 0,
+      streamID: 0,
+      writeToken: 0,
+      bytes: nil,
+      value0: platform,
+      value1: 55_001,
+      nextDeadlineMilliseconds: 0,
+      closeReason: 0,
+      handoffState: 0,
+      peerCloseReason: nil,
+      peerHandoffState: nil
+    )
   }
 
   func drive(_ event: SupervisorEvent) throws -> SupervisorOutcome {

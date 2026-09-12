@@ -157,6 +157,7 @@ fn device_json() -> Vec<u8> {
 
 #[derive(Clone)]
 struct RecordedRequest {
+    program: PathBuf,
     args: Vec<OsString>,
     descriptor_env: Option<OsString>,
     scrub: bool,
@@ -309,6 +310,8 @@ struct FakeRunner {
     running: AtomicBool,
     ambiguous: AtomicBool,
     installed: AtomicBool,
+    container_failure: AtomicBool,
+    process_table_failure: AtomicBool,
     identity_token: AtomicU64,
     term_effective: AtomicBool,
     kill_effective: AtomicBool,
@@ -334,6 +337,8 @@ impl FakeRunner {
             running: AtomicBool::new(false),
             ambiguous: AtomicBool::new(false),
             installed: AtomicBool::new(true),
+            container_failure: AtomicBool::new(false),
+            process_table_failure: AtomicBool::new(false),
             identity_token: AtomicU64::new(1),
             term_effective: AtomicBool::new(true),
             kill_effective: AtomicBool::new(true),
@@ -372,6 +377,7 @@ impl FakeRunner {
             .lock()
             .expect("requests")
             .push(RecordedRequest {
+                program: request.program.clone(),
                 args: request.args.clone(),
                 descriptor_env: request.descriptor_env.clone(),
                 scrub: request.scrub_simctl_child,
@@ -465,9 +471,15 @@ impl ToolRunner for Arc<FakeRunner> {
                 "app".to_owned(),
             ]
         {
+            if self.container_failure.load(Ordering::Acquire) {
+                return Err(failure(PlatformFailureKind::Rejected));
+            }
             return Ok(success(format!("{}\n", self.app.display()).into_bytes()));
         }
-        if args == ["simctl", "spawn", UDID, "/bin/ps", "-axo", "pid=,command="] {
+        if request.program == Path::new("/bin/ps") && args == ["-axo", "pid=,command="] {
+            if self.process_table_failure.load(Ordering::Acquire) {
+                return Err(failure(PlatformFailureKind::TimedOut));
+            }
             return Ok(success(self.process_table()));
         }
         if args
@@ -501,18 +513,12 @@ impl ToolRunner for Arc<FakeRunner> {
                 format!("{}: {}\n", self.app_id, self.pid.load(Ordering::Acquire)).into_bytes(),
             ));
         }
-        if args.len() == 6
-            && args[..4]
-                == [
-                    "simctl".to_owned(),
-                    "spawn".to_owned(),
-                    UDID.to_owned(),
-                    "/bin/kill".to_owned(),
-                ]
-            && matches!(args[4].as_str(), "-TERM" | "-KILL")
-            && args[5] == self.pid.load(Ordering::Acquire).to_string()
+        if request.program == Path::new("/bin/kill")
+            && args.len() == 2
+            && matches!(args[0].as_str(), "-TERM" | "-KILL")
+            && args[1] == self.pid.load(Ordering::Acquire).to_string()
         {
-            let effective = if args[4] == "-TERM" {
+            let effective = if args[0] == "-TERM" {
                 self.term_effective.load(Ordering::Acquire)
             } else {
                 self.kill_effective.load(Ordering::Acquire)
@@ -714,6 +720,27 @@ fn pending_launch_marks_closed_rejection_sources_without_target_values() {
 }
 
 #[test]
+fn process_inventory_uses_host_ps_without_simulator_spawn_overhead() {
+    let artifact = TempArtifact::new("host-process-inventory");
+    let runner = FakeRunner::new(&artifact.app, "com.example.Inventory".to_owned());
+    runner.running.store(true, Ordering::Release);
+    let processes = require(matching_processes(
+        &runner,
+        &runner.app,
+        &Cancellation::new(),
+        deadline_after(1_000),
+    ));
+    assert_eq!(processes, [runner.pid.load(Ordering::Acquire)]);
+    let requests = runner.requests.lock().expect("requests");
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].program, Path::new("/bin/ps"));
+    assert_eq!(
+        requests[0].args,
+        ["-axo", "pid=,command="].map(OsString::from)
+    );
+}
+
+#[test]
 fn exact_pid_launch_raw_io_and_proven_cleanup() {
     let artifact = TempArtifact::new("happy");
     let app_id = format!(
@@ -769,6 +796,18 @@ fn exact_pid_launch_raw_io_and_proven_cleanup() {
     assert_eq!(
         launch.descriptor_env.as_deref(),
         Some(OsStr::new(&URL_SAFE_NO_PAD.encode(descriptor_bytes)))
+    );
+    let signal = requests
+        .iter()
+        .find(|request| request.args.iter().any(|arg| arg == "-TERM"))
+        .expect("termination request");
+    assert_eq!(signal.program, Path::new("/bin/kill"));
+    assert_eq!(
+        signal.args,
+        [
+            OsString::from("-TERM"),
+            OsString::from(runner.pid.load(Ordering::Acquire).to_string())
+        ]
     );
 }
 
@@ -1121,12 +1160,7 @@ fn cleanup_rejects_pid_reuse_without_signalling_the_new_process() {
             .lock()
             .expect("requests")
             .iter()
-            .any(|request| {
-                request
-                    .args
-                    .iter()
-                    .any(|arg| arg == OsStr::new("/bin/kill"))
-            })
+            .any(|request| request.program == Path::new("/bin/kill"))
     );
     runner.running.store(false, Ordering::Release);
 }
@@ -1161,12 +1195,7 @@ fn endpoint_takeover_failure_never_kills_a_possibly_attached_process() {
             .lock()
             .expect("requests")
             .iter()
-            .any(|request| {
-                request
-                    .args
-                    .iter()
-                    .any(|arg| arg == OsStr::new("/bin/kill"))
-            })
+            .any(|request| request.program == Path::new("/bin/kill"))
     );
     runner.running.store(false, Ordering::Release);
 }
@@ -1375,6 +1404,22 @@ fn absent_app_installs_snapshot_and_owned_cleanup_uninstalls_exact_app() {
         Cancellation::new(),
         deadline_after(1_000),
     ));
+    {
+        let requests = runner.requests.lock().expect("requests");
+        let presence_checks = requests
+            .iter()
+            .filter(|request| request.args.get(1) == Some(&OsString::from("listapps")))
+            .count();
+        assert_eq!(
+            presence_checks, 1,
+            "the exact container and artifact verification prove installation without a second inventory query"
+        );
+        assert!(
+            !requests
+                .iter()
+                .any(|request| request.args == ["simctl", "help", "spawn"].map(OsString::from))
+        );
+    }
     let (_, _, cleanup) = launched.into_parts();
     require(cleanup.cleanup(Cancellation::new(), deadline_after(1_000)));
     assert!(!runner.installed.load(Ordering::Acquire));
@@ -1386,6 +1431,49 @@ fn absent_app_installs_snapshot_and_owned_cleanup_uninstalls_exact_app() {
     assert!(requests.iter().any(|request| {
         request.args == ["simctl", "uninstall", UDID, app_id.as_str()].map(OsString::from)
     }));
+}
+
+#[test]
+fn failed_owned_install_identity_proof_never_launches_or_uninstalls() {
+    for container_failure in [true, false] {
+        let artifact = TempArtifact::new("owned-container-failure");
+        let app_id = format!(
+            "com.example.ContainerFailure.{}",
+            NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed)
+        );
+        let runner = FakeRunner::new(&artifact.app, app_id.clone());
+        runner.installed.store(false, Ordering::Release);
+        runner
+            .container_failure
+            .store(container_failure, Ordering::Release);
+        runner
+            .process_table_failure
+            .store(!container_failure, Ordering::Release);
+        let adapter = test_adapter(Arc::clone(&runner), &artifact.app);
+        let error = adapter
+            .begin_launch(
+                selection(&artifact.app, &app_id, [0; 32]),
+                deadline_after(1_000),
+            )
+            .launch(
+                require(PublicLaunchDescriptor::from_d2_canonical_bytes(vec![1])),
+                Cancellation::new(),
+                deadline_after(1_000),
+            )
+            .err()
+            .expect("unproven owned installation must fail closed");
+        assert_eq!(error.kind(), PlatformFailureKind::CleanupFailed);
+        assert!(runner.installed.load(Ordering::Acquire));
+        assert_eq!(runner.launch_calls.load(Ordering::Acquire), 0);
+        assert!(
+            !runner
+                .requests
+                .lock()
+                .expect("requests")
+                .iter()
+                .any(|r| r.args.get(1) == Some(&OsString::from("uninstall")))
+        );
+    }
 }
 
 #[test]
@@ -1839,7 +1927,6 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
     assert!(
         require(matching_processes(
             &runner,
-            selection.device_selector(),
             &installed,
             &cancellation,
             deadline,
@@ -1864,18 +1951,18 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
     let owner = require(prove_exact_owner(
         &runner,
         &DarwinProcessIdentityProbe,
-        &selection,
         &installed,
         pid,
         &cancellation,
         deadline,
     ));
+    let cleanup_deadline = deadline_after(CLEANUP_BUDGET_MS);
     require(terminate_exact_owner(
         &runner,
         &DarwinProcessIdentityProbe,
         &owner,
         &cancellation,
-        deadline,
+        cleanup_deadline,
     ));
     let verifier = D0ArtifactVerifier;
     let launch_artifact = PreparedLaunchArtifact {
@@ -1894,6 +1981,6 @@ fn real_simulator_snapshot_install_pid_and_owned_cleanup() {
             installed_by_lease: true,
         },
         &cancellation,
-        deadline,
+        cleanup_deadline,
     ));
 }

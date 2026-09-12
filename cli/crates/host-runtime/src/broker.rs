@@ -3,8 +3,9 @@ use crate::{
     ExchangeComplete, HandoffState, Platform, PrepareBody, READY_REFERENCE_TTL_MS, ReadyReference,
     ReadyTarget, Request, SessionOpened,
     adapter::{
-        AbsoluteDeadline, Cancellation, CleanupReceipt, PlatformFailure, PlatformFailureKind,
-        PlatformTargetAdapter, PublicLaunchDescriptor, RawConnector, RawDuplex, TargetSelection,
+        AbsoluteDeadline, Cancellation, CleanupReceipt, LaunchEndpoint, PendingLaunch,
+        PlatformFailure, PlatformFailureKind, PlatformTargetAdapter, PublicLaunchDescriptor,
+        RawConnector, RawDuplex, TargetSelection,
     },
     raw_transport::{self, BootstrapSuccess, TransportFailure},
 };
@@ -48,8 +49,8 @@ const HEARTBEAT_MISSES: u8 = 4;
 
 const fn prepare_launch_budget(platform: Platform) -> u64 {
     match platform {
-        Platform::IosSimulator => IOS_PREPARE_LAUNCH_MS,
-        Platform::AndroidEmulator => ANDROID_PREPARE_LAUNCH_MS,
+        Platform::IosSimulator | Platform::IosDevice => IOS_PREPARE_LAUNCH_MS,
+        Platform::AndroidEmulator | Platform::AndroidDevice => ANDROID_PREPARE_LAUNCH_MS,
     }
 }
 
@@ -401,6 +402,8 @@ struct Core {
     stale_tokens: HashMap<[u8; 32], u64>,
     ios: Arc<dyn PlatformTargetAdapter>,
     android: Arc<dyn PlatformTargetAdapter>,
+    ios_device: Arc<dyn PlatformTargetAdapter>,
+    android_device: Arc<dyn PlatformTargetAdapter>,
     // Shutdown seals admission before collecting slot indices, so a Prepare
     // cannot publish a new lease after the shutdown sweep has begun.
     shutting_down: bool,
@@ -446,17 +449,108 @@ struct CompletionReservation {
     deadline: u64,
 }
 
+enum UnavailablePhysicalKind {
+    Ios,
+    Android,
+}
+
+struct UnavailablePhysicalAdapter {
+    kind: UnavailablePhysicalKind,
+}
+
+impl UnavailablePhysicalAdapter {
+    fn ios() -> Self {
+        Self {
+            kind: UnavailablePhysicalKind::Ios,
+        }
+    }
+
+    fn android() -> Self {
+        Self {
+            kind: UnavailablePhysicalKind::Android,
+        }
+    }
+}
+
+impl PlatformTargetAdapter for UnavailablePhysicalAdapter {
+    fn begin_launch(
+        &self,
+        _selection: TargetSelection,
+        _absolute_deadline: AbsoluteDeadline,
+    ) -> Box<dyn PendingLaunch> {
+        Box::new(UnavailablePhysicalLaunch {
+            endpoint: match self.kind {
+                UnavailablePhysicalKind::Ios => LaunchEndpoint::ios_loopback(49_152)
+                    .unwrap_or_else(|_| unreachable!("constant iOS endpoint is valid")),
+                UnavailablePhysicalKind::Android => LaunchEndpoint::android_local_abstract(
+                    "apppilotkit-physical-unavailable".to_owned(),
+                )
+                .unwrap_or_else(|_| unreachable!("constant Android endpoint is valid")),
+            },
+        })
+    }
+}
+
+struct UnavailablePhysicalLaunch {
+    endpoint: LaunchEndpoint,
+}
+
+impl PendingLaunch for UnavailablePhysicalLaunch {
+    fn endpoint(&self) -> &LaunchEndpoint {
+        &self.endpoint
+    }
+
+    fn launch(
+        self: Box<Self>,
+        _descriptor: PublicLaunchDescriptor,
+        _cancellation: Cancellation,
+        _absolute_deadline: AbsoluteDeadline,
+    ) -> Result<crate::adapter::LaunchedTargetIo, PlatformFailure> {
+        Err(PlatformFailure::new(PlatformFailureKind::Unavailable))
+    }
+
+    fn abort(
+        self: Box<Self>,
+        _cancellation: Cancellation,
+        _absolute_deadline: AbsoluteDeadline,
+    ) -> Result<(), PlatformFailure> {
+        Ok(())
+    }
+}
+
 impl SessionBroker {
     pub fn new(
         ios: Arc<dyn PlatformTargetAdapter>,
         android: Arc<dyn PlatformTargetAdapter>,
     ) -> Result<Self, ControlFailure> {
-        Self::with_clock(ios, android, Arc::new(SystemClock))
+        Self::new_with_physical(
+            ios,
+            android,
+            Arc::new(UnavailablePhysicalAdapter::ios()),
+            Arc::new(UnavailablePhysicalAdapter::android()),
+        )
+    }
+
+    pub fn new_with_physical(
+        ios: Arc<dyn PlatformTargetAdapter>,
+        android: Arc<dyn PlatformTargetAdapter>,
+        ios_device: Arc<dyn PlatformTargetAdapter>,
+        android_device: Arc<dyn PlatformTargetAdapter>,
+    ) -> Result<Self, ControlFailure> {
+        Self::with_clock(
+            ios,
+            android,
+            ios_device,
+            android_device,
+            Arc::new(SystemClock),
+        )
     }
 
     fn with_clock(
         ios: Arc<dyn PlatformTargetAdapter>,
         android: Arc<dyn PlatformTargetAdapter>,
+        ios_device: Arc<dyn PlatformTargetAdapter>,
+        android_device: Arc<dyn PlatformTargetAdapter>,
         clock: Arc<dyn Clock>,
     ) -> Result<Self, ControlFailure> {
         Ok(Self {
@@ -466,6 +560,8 @@ impl SessionBroker {
                 stale_tokens: HashMap::new(),
                 ios,
                 android,
+                ios_device,
+                android_device,
                 shutting_down: false,
                 entropy: File::open("/dev/urandom")
                     .map_err(|_| fail(ErrorStage::Ipc, CloseReason::InternalError))?,
@@ -720,6 +816,8 @@ impl SessionBroker {
                 let adapter = match request.body.platform {
                     Platform::IosSimulator => Arc::clone(&core.ios),
                     Platform::AndroidEmulator => Arc::clone(&core.android),
+                    Platform::IosDevice => Arc::clone(&core.ios_device),
+                    Platform::AndroidDevice => Arc::clone(&core.android_device),
                 };
                 let mut references = HashMap::new();
                 references.insert(
@@ -3405,6 +3503,8 @@ mod lifecycle_tests {
                 stale_tokens: HashMap::new(),
                 ios: Arc::clone(&adapter),
                 android: adapter,
+                ios_device: Arc::new(UnavailablePhysicalAdapter::ios()),
+                android_device: Arc::new(UnavailablePhysicalAdapter::android()),
                 shutting_down: false,
                 entropy: File::open("/dev/urandom").expect("entropy"),
             })),
@@ -3412,6 +3512,160 @@ mod lifecycle_tests {
             clock: Arc::clone(&clock) as Arc<dyn Clock>,
         };
         (broker, operations, clock)
+    }
+
+    #[test]
+    fn physical_prepare_fails_closed_without_touching_sim_leases() {
+        let (broker, _, clock) =
+            terminal_test_broker(Box::new(CountCleanup(Arc::new(AtomicUsize::new(0)))));
+        clock.0.store(1, Ordering::SeqCst);
+        for platform in [Platform::IosDevice, Platform::AndroidDevice] {
+            let error = broker
+                .handle(ControlRequest::Prepare(Request {
+                    request_id: [9; 16],
+                    deadline_unix_ms: 10_000,
+                    body: PrepareBody {
+                        platform,
+                        device_selector: "udid".into(),
+                        app_id: "dev.app".into(),
+                        app_artifact: "/tmp/App.app".into(),
+                        app_artifact_sha256: [0x61; 32],
+                    },
+                }))
+                .expect_err("default physical adapters fail closed");
+            assert_eq!(error.close_reason, CloseReason::InternalError);
+            assert_eq!(error.stage, ErrorStage::Bootstrap);
+            assert_eq!(error.kind, ErrorKind::InternalError);
+        }
+        let core = broker.inner.lock().expect("leases");
+        let sim = core.leases[0].as_ref().expect("sim lease kept");
+        assert_eq!(sim.key.platform, Platform::IosSimulator);
+        assert!(matches!(sim.state, LeaseState::Ready));
+        assert_eq!(
+            core.leases
+                .iter()
+                .flatten()
+                .filter(|lease| lease.key.platform == Platform::IosSimulator)
+                .count(),
+            1
+        );
+    }
+
+    struct RecordingPhysicalAdapter {
+        platforms: Mutex<Vec<Platform>>,
+        launches: Arc<AtomicUsize>,
+    }
+
+    impl RecordingPhysicalAdapter {
+        fn new() -> Self {
+            Self {
+                platforms: Mutex::new(Vec::new()),
+                launches: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl PlatformTargetAdapter for RecordingPhysicalAdapter {
+        fn begin_launch(
+            &self,
+            selection: TargetSelection,
+            _: AbsoluteDeadline,
+        ) -> Box<dyn PendingLaunch> {
+            self.platforms
+                .lock()
+                .expect("recorded platforms")
+                .push(selection.platform());
+            Box::new(RecordingPhysicalLaunch {
+                endpoint: LaunchEndpoint::ios_loopback(49_152)
+                    .unwrap_or_else(|_| unreachable!("constant iOS endpoint is valid")),
+                launches: Arc::clone(&self.launches),
+            })
+        }
+    }
+
+    struct RecordingPhysicalLaunch {
+        endpoint: LaunchEndpoint,
+        launches: Arc<AtomicUsize>,
+    }
+
+    impl PendingLaunch for RecordingPhysicalLaunch {
+        fn endpoint(&self) -> &LaunchEndpoint {
+            &self.endpoint
+        }
+
+        fn launch(
+            self: Box<Self>,
+            _descriptor: PublicLaunchDescriptor,
+            _cancellation: Cancellation,
+            _absolute_deadline: AbsoluteDeadline,
+        ) -> Result<crate::adapter::LaunchedTargetIo, PlatformFailure> {
+            self.launches.fetch_add(1, Ordering::SeqCst);
+            Err(PlatformFailure::new(PlatformFailureKind::Unavailable))
+        }
+
+        fn abort(
+            self: Box<Self>,
+            _cancellation: Cancellation,
+            _absolute_deadline: AbsoluteDeadline,
+        ) -> Result<(), PlatformFailure> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn injected_ios_device_adapter_is_used_and_default_unavailable_skips_sim() {
+        let ios_device = Arc::new(RecordingPhysicalAdapter::new());
+        let broker = SessionBroker::new_with_physical(
+            Arc::new(NeverAdapter),
+            Arc::new(NeverAdapter),
+            Arc::clone(&ios_device) as Arc<dyn PlatformTargetAdapter>,
+            Arc::new(UnavailablePhysicalAdapter::android()),
+        )
+        .expect("broker");
+        let error = broker
+            .handle(ControlRequest::Prepare(Request {
+                request_id: [9; 16],
+                deadline_unix_ms: now().expect("clock") + 10_000,
+                body: PrepareBody {
+                    platform: Platform::IosDevice,
+                    device_selector: "udid".into(),
+                    app_id: "dev.app".into(),
+                    app_artifact: "/tmp/App.app".into(),
+                    app_artifact_sha256: [0x61; 32],
+                },
+            }))
+            .expect_err("injected physical adapter fails closed in this test");
+        assert_eq!(error.close_reason, CloseReason::InternalError);
+        assert_eq!(error.kind, ErrorKind::InternalError);
+        assert_eq!(
+            *ios_device.platforms.lock().expect("recorded platforms"),
+            [Platform::IosDevice]
+        );
+        assert_eq!(ios_device.launches.load(Ordering::SeqCst), 1);
+
+        let default = SessionBroker::new(Arc::new(NeverAdapter), Arc::new(NeverAdapter))
+            .expect("default physical unavailable");
+        let error = default
+            .handle(ControlRequest::Prepare(Request {
+                request_id: [8; 16],
+                deadline_unix_ms: now().expect("clock") + 10_000,
+                body: PrepareBody {
+                    platform: Platform::IosDevice,
+                    device_selector: "udid".into(),
+                    app_id: "dev.app".into(),
+                    app_artifact: "/tmp/App.app".into(),
+                    app_artifact_sha256: [0x61; 32],
+                },
+            }))
+            .expect_err("default physical adapter is unavailable");
+        assert_eq!(error.close_reason, CloseReason::InternalError);
+        let core = default.inner.lock().expect("leases");
+        assert!(
+            core.leases
+                .iter()
+                .flatten()
+                .all(|lease| lease.key.platform != Platform::IosSimulator)
+        );
     }
 
     #[test]
@@ -3734,6 +3988,8 @@ mod lifecycle_tests {
                 stale_tokens: HashMap::new(),
                 ios: Arc::clone(&adapter),
                 android: adapter,
+                ios_device: Arc::new(UnavailablePhysicalAdapter::ios()),
+                android_device: Arc::new(UnavailablePhysicalAdapter::android()),
                 shutting_down: false,
                 entropy: File::open("/dev/urandom").expect("entropy"),
             })),

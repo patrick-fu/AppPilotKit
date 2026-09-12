@@ -15,11 +15,16 @@ use apppilotkit_host_runtime::adapter::{
     AbsoluteDeadline, Cancellation, LaunchEndpoint, PendingLaunch, PlatformFailure,
     PlatformFailureKind, PlatformTargetAdapter, PublicLaunchDescriptor, TargetSelection,
 };
+#[cfg(all(test, feature = "internal-diagnostics"))]
+use apppilotkit_host_runtime::encode_failure_packet;
+#[cfg(test)]
+use apppilotkit_host_runtime::encode_success_packet;
 use apppilotkit_host_runtime::{
     BrokerInstance, CloseLeaseBody, CloseReason, ControlFailure, ControlPacketDecoder,
     ControlRequest, ControlResult, ControlSuccess, ErrorKind, ExchangeBody, OpenSessionBody,
     Platform, PrepareBody, ReadyReference, Request, RuntimePaths, SessionBroker, SideEffect,
-    decode_result_packet, encode_failure_packet, encode_request_packet, encode_success_packet,
+    decode_result_packet, encode_failure_packet_versioned, encode_request_packet,
+    encode_request_packet_v2, encode_success_packet_versioned,
 };
 #[cfg(feature = "internal-diagnostics")]
 const INTERNAL_BOOTSTRAP_ADAPTER_REJECTED: &str = "bootstrap_adapter_rejected";
@@ -428,7 +433,17 @@ impl BrokerControlClient {
         deadline: Instant,
     ) -> Result<ControlSuccess, ControlFailure> {
         let mut stream = self.connector.connect().map_err(io_failure)?;
-        let packet = encode_request_packet(&request)?;
+        let packet = match &request {
+            ControlRequest::Prepare(prepare)
+                if matches!(
+                    prepare.body.platform,
+                    Platform::IosDevice | Platform::AndroidDevice
+                ) =>
+            {
+                encode_request_packet_v2(&request)?
+            }
+            _ => encode_request_packet(&request)?,
+        };
         write_control_packet_with_clock(&mut stream, &packet, deadline, self.clock.as_ref())
             .map_err(io_failure)?;
         stream
@@ -595,10 +610,11 @@ pub fn serve_connection(stream: &mut UnixStream, broker: &SessionBroker) -> io::
         }
     };
     let request_id = request.request_id();
+    let ipc_version = decoder.ipc_version().map_err(control_io)?;
     let deadline = control_deadline(request.deadline_unix_ms());
     let packet = match broker.handle(request) {
-        Ok(success) => encode_success_packet(request_id, success),
-        Err(error) => encode_failure_packet(request_id, &error),
+        Ok(success) => encode_success_packet_versioned(request_id, success, ipc_version),
+        Err(error) => encode_failure_packet_versioned(request_id, &error, ipc_version),
     }
     .map_err(control_io)?;
     write_control_packet(stream, &packet, deadline)
@@ -614,9 +630,11 @@ pub fn run_broker() -> io::Result<()> {
     // worker rather than the thread that would otherwise block in accept.
     instance.set_nonblocking(true)?;
     let broker = Arc::new(
-        SessionBroker::new(
+        SessionBroker::new_with_physical(
             Arc::new(apppilotkit_apple_simulator_adapter::AppleSimulatorAdapter::default()),
             Arc::new(LazyAndroidAdapter::production()),
+            Arc::new(apppilotkit_apple_device_adapter::AppleDeviceAdapter::default()),
+            Arc::new(apppilotkit_android_device_adapter::AndroidDeviceAdapter::production()),
         )
         .map_err(control_io)?,
     );
@@ -1145,6 +1163,8 @@ pub fn prepare_target(
     let platform = match object.get("platform").and_then(Value::as_str) {
         Some("ios-simulator") => Platform::IosSimulator,
         Some("android-emulator") => Platform::AndroidEmulator,
+        Some("ios-device") => Platform::IosDevice,
+        Some("android-device") => Platform::AndroidDevice,
         _ => return Err(PrepareError::InvalidInvocation),
     };
     let selector = safe_selector(object.get("device_selector").and_then(Value::as_str))?;
@@ -1152,10 +1172,10 @@ pub fn prepare_target(
     let artifact = absolute_path(object.get("app_artifact").and_then(Value::as_str))?;
     let encoding = object.get("artifact_encoding").and_then(Value::as_str);
     let digest = match (platform, encoding) {
-        (Platform::AndroidEmulator, Some("raw-file-v1")) => {
+        (Platform::AndroidEmulator | Platform::AndroidDevice, Some("raw-file-v1")) => {
             digest_regular_file(Path::new(artifact))?
         }
-        (Platform::IosSimulator, Some("ios-app-tree-v1")) => {
+        (Platform::IosSimulator | Platform::IosDevice, Some("ios-app-tree-v1")) => {
             let deadline = AbsoluteDeadline::new(deadline()).map_err(|_| PrepareError::Io)?;
             apppilotkit_apple_simulator_adapter::inspect_ios_app_tree_digest(
                 Path::new(artifact),
@@ -2242,6 +2262,53 @@ mod tests {
     }
 
     #[test]
+    fn serve_connection_echoes_v2_on_physical_prepare_internal_error() {
+        for platform in [Platform::IosDevice, Platform::AndroidDevice] {
+            let (mut client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+            let broker = Arc::new(
+                SessionBroker::new(Arc::new(RejectAdapter), Arc::new(RejectAdapter))
+                    .expect("Broker construction"),
+            );
+            let handle = thread::spawn(move || {
+                serve_connection(&mut server_stream, broker.as_ref()).expect("serve connection");
+            });
+            let request = ControlRequest::Prepare(Request {
+                request_id: [7; 16],
+                deadline_unix_ms: deadline(),
+                body: PrepareBody {
+                    platform,
+                    device_selector: "device-1".into(),
+                    app_id: "example.app".into(),
+                    app_artifact: "/tmp/example.app".into(),
+                    app_artifact_sha256: [9; 32],
+                },
+            });
+            let packet = encode_request_packet_v2(&request).expect("v2 prepare");
+            client_stream.write_all(&packet).expect("write v2 prepare");
+            client_stream
+                .shutdown(std::net::Shutdown::Write)
+                .expect("half-close");
+            let mut response = Vec::new();
+            client_stream
+                .read_to_end(&mut response)
+                .expect("read result");
+            assert_eq!(response[6], 2, "result map key 0 echoes request version");
+            let ControlResult::Failure { request_id, error } =
+                decode_result_packet(&response).expect("decode failure")
+            else {
+                panic!("physical prepare fails closed");
+            };
+            assert_eq!(request_id, [7; 16]);
+            assert_eq!(error.kind, ErrorKind::InternalError);
+            assert_eq!(
+                error.close_reason,
+                apppilotkit_host_runtime::CloseReason::InternalError
+            );
+            handle.join().expect("server");
+        }
+    }
+
+    #[test]
     fn real_ipc_broker_rejects_a_restarted_target_session_and_opens_a_fresh_generation() {
         let adapter = existing_host_adapter::successful();
         let broker = Arc::new(SessionBroker::new(Arc::clone(&adapter), adapter).expect("broker"));
@@ -2733,6 +2800,13 @@ mod tests {
             server_stream
                 .read_to_end(&mut packet)
                 .expect("prepare request");
+            assert_eq!(packet[6], 1, "android-emulator prepare stays v1");
+            assert!(
+                packet
+                    .windows(4)
+                    .any(|window| window == [0x03, 0x00, 0x04, 0xa5]),
+                "v1 5-key prepare body"
+            );
             let ControlRequest::Prepare(request) =
                 apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode prepare")
             else {
@@ -2831,6 +2905,13 @@ mod tests {
             server_stream
                 .read_to_end(&mut packet)
                 .expect("prepare request");
+            assert_eq!(packet[6], 1, "ios-simulator prepare stays v1");
+            assert!(
+                packet
+                    .windows(4)
+                    .any(|window| window == [0x03, 0x00, 0x04, 0xa5]),
+                "v1 5-key prepare body"
+            );
             let ControlRequest::Prepare(request) =
                 apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode prepare")
             else {
@@ -2872,6 +2953,189 @@ mod tests {
         server.join().expect("prepare server");
         std::fs::remove_dir_all(artifact_path.parent().expect("app parent"))
             .expect("remove app tree");
+    }
+
+    #[test]
+    fn target_prepare_json_ios_device_sends_v2_six_key_prepare() {
+        let app_id = "dev.apppilotkit.smoke";
+        let artifact_path = ios_tree_artifact(app_id, "ios-device-v2");
+        let artifact = std::fs::canonicalize(&artifact_path)
+            .expect("test artifact")
+            .display()
+            .to_string();
+        let scanner_deadline = match AbsoluteDeadline::new(deadline()) {
+            Ok(value) => value,
+            Err(_) => panic!("valid deadline"),
+        };
+        let expected = match apppilotkit_apple_simulator_adapter::inspect_ios_app_tree_digest(
+            Path::new(&artifact),
+            app_id,
+            &Cancellation::new(),
+            scanner_deadline,
+        ) {
+            Ok(value) => value,
+            Err(_) => panic!("valid iOS app tree"),
+        };
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
+            Some(client_stream),
+        ))));
+        let server = thread::spawn(move || {
+            let mut packet = Vec::new();
+            server_stream
+                .read_to_end(&mut packet)
+                .expect("prepare request");
+            assert_eq!(packet[6], 2, "ios-device prepare is v2");
+            assert!(
+                packet
+                    .windows(4)
+                    .any(|window| window == [0x03, 0x00, 0x04, 0xa6]),
+                "v2 6-key prepare body"
+            );
+            assert_eq!(*packet.last().expect("encoding"), 0);
+            let ControlRequest::Prepare(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode prepare")
+            else {
+                panic!("prepare request")
+            };
+            assert_eq!(request.body.platform, Platform::IosDevice);
+            assert_eq!(request.body.app_artifact, artifact);
+            assert_eq!(request.body.app_artifact_sha256, expected);
+            let success = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
+                target_token: [4; 32],
+                process_generation: 23,
+                listener_epoch: 1,
+                issued_at_unix_ms: 100,
+                expires_at_unix_ms: 30_100,
+            });
+            server_stream
+                .write_all(
+                    &encode_success_packet(request.request_id, success).expect("prepare success"),
+                )
+                .expect("prepare response");
+        });
+        let request = serde_json::json!({
+            "schema_version": "1.0",
+            "platform": "ios-device",
+            "device_selector": "DEVICE",
+            "app_id": app_id,
+            "app_artifact": std::fs::canonicalize(&artifact_path).expect("test artifact").display().to_string(),
+            "artifact_encoding": "ios-app-tree-v1"
+        });
+        let ready = prepare_target(
+            &serde_json::to_vec(&request).expect("request json"),
+            &client,
+        )
+        .expect("prepared target");
+        assert_eq!(
+            ready.target,
+            ReadyReference::from_token([4; 32]).to_string()
+        );
+        server.join().expect("prepare server");
+        std::fs::remove_dir_all(artifact_path.parent().expect("app parent"))
+            .expect("remove app tree");
+    }
+
+    #[test]
+    fn target_prepare_json_android_device_sends_v2_six_key_prepare() {
+        let artifact_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let artifact = std::fs::canonicalize(&artifact_path)
+            .expect("test artifact")
+            .display()
+            .to_string();
+        let (client_stream, mut server_stream) = UnixStream::pair().expect("pair");
+        let client = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(
+            Some(client_stream),
+        ))));
+        let artifact_for_server = artifact_path.clone();
+        let server = thread::spawn(move || {
+            let mut packet = Vec::new();
+            server_stream
+                .read_to_end(&mut packet)
+                .expect("prepare request");
+            assert_eq!(packet[6], 2, "android-device prepare is v2");
+            assert!(
+                packet
+                    .windows(4)
+                    .any(|window| window == [0x03, 0x00, 0x04, 0xa6]),
+                "v2 6-key prepare body"
+            );
+            assert_eq!(*packet.last().expect("encoding"), 1);
+            let ControlRequest::Prepare(request) =
+                apppilotkit_host_runtime::decode_request_packet(&packet).expect("decode prepare")
+            else {
+                panic!("prepare request")
+            };
+            assert_eq!(request.body.platform, Platform::AndroidDevice);
+            assert_eq!(request.body.app_artifact, artifact);
+            let expected_digest: [u8; 32] =
+                Sha256::digest(fs::read(&artifact_for_server).expect("read test artifact")).into();
+            assert_eq!(request.body.app_artifact_sha256, expected_digest);
+            let success = ControlSuccess::TargetReady(apppilotkit_host_runtime::ReadyTarget {
+                target_token: [5; 32],
+                process_generation: 19,
+                listener_epoch: 1,
+                issued_at_unix_ms: 100,
+                expires_at_unix_ms: 30_100,
+            });
+            server_stream
+                .write_all(
+                    &encode_success_packet(request.request_id, success).expect("prepare success"),
+                )
+                .expect("prepare response");
+        });
+        let request = serde_json::json!({
+            "schema_version": "1.0",
+            "platform": "android-device",
+            "device_selector": "SERIAL",
+            "app_id": "dev.apppilotkit.smoke",
+            "app_artifact": std::fs::canonicalize(&artifact_path).expect("test artifact").display().to_string(),
+            "artifact_encoding": "raw-file-v1"
+        });
+        let ready = prepare_target(
+            &serde_json::to_vec(&request).expect("request json"),
+            &client,
+        )
+        .expect("prepared target");
+        assert_eq!(
+            ready.target,
+            ReadyReference::from_token([5; 32]).to_string()
+        );
+        server.join().expect("prepare server");
+    }
+
+    #[test]
+    fn target_prepare_rejects_unknown_platform_and_device_encoding_mismatch() {
+        let unused = BrokerControlClient::with_connector(Arc::new(PairConnector(Mutex::new(None))));
+        let artifact_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let artifact = std::fs::canonicalize(&artifact_path)
+            .expect("test artifact")
+            .display()
+            .to_string();
+        for (platform, encoding) in [
+            ("unknown", "raw-file-v1"),
+            ("ios-device", "raw-file-v1"),
+            ("android-device", "ios-app-tree-v1"),
+        ] {
+            let request = serde_json::json!({
+                "schema_version": "1.0",
+                "platform": platform,
+                "device_selector": "selector",
+                "app_id": "dev.apppilotkit.smoke",
+                "app_artifact": artifact,
+                "artifact_encoding": encoding
+            });
+            assert!(
+                matches!(
+                    prepare_target(
+                        &serde_json::to_vec(&request).expect("request json"),
+                        &unused
+                    ),
+                    Err(PrepareError::InvalidInvocation)
+                ),
+                "expected InvalidInvocation for {platform}/{encoding}"
+            );
+        }
     }
 
     #[test]

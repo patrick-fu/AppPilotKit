@@ -44,18 +44,22 @@ exclusivity rather than a stronger `simctl` precheck.
 `simctl listapps` emits an OpenStep property list, so that output uses a separate
 bounded, fully consuming grammar for dictionaries, arrays, data, strings, and
 atoms. It rejects malformed containers and duplicate keys before absence can
-trigger installation. Every app-affecting command includes the exact uppercase
-UDID.
+trigger installation. Every installation and launch command includes the exact
+uppercase UDID; process signals use only the proven exact Host PID.
 
 Focused Xcode 26.2 / iOS 26.3 evidence established that Simulator `pgrep` cannot
 read the process list, repeat `simctl launch` returns the existing PID, and
 killing a `simctl launch --console` proxy leaves the Target alive. The adapter
-therefore uses exact-UDID `ps`, exact launch PID output, endpoint takeover, and
+therefore uses Host `/bin/ps`, exact launch PID output, endpoint takeover, and
 Target-process identity termination proof. Cleanup revalidates the exact
 `proc_pidpath` plus microsecond process start time before TERM and before any
-KILL escalation, so PID reuse fails closed. It does not use `pgrep`,
+KILL escalation through Host `/bin/kill`, so PID reuse fails closed. Simulator
+processes share the Host process table; avoiding `simctl spawn` for inventory
+and signals leaves the two-second cleanup budget for verified uninstallation.
+The exact canonical installed app path still filters every process inventory.
+It does not use `pgrep`,
 `--terminate-running-process`, or proxy exit as ownership evidence. A launch
-failure releases the process-local reservation only after an exact-UDID process
+failure releases the process-local reservation only after an exact-app process
 probe proves that no candidate exists; uncertain failures remain tombstoned.
 The process-local ledger retains each Target port from PendingLaunch through
 cleanup and also reference-counts local source ports of every live raw stream,

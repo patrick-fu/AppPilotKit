@@ -1,0 +1,39 @@
+; AppPilotKit private process bootstrap descriptor v2.
+; Physical Targets only. Simulator/Emulator keep v1 launch-descriptor.
+; RFC 8949 deterministic CBOR. Unsigned integer map keys are emitted ascending.
+;
+; Noise_NK_25519_ChaChaPoly_SHA256 / NNpsk0 prologue array version, m2 payload
+; version, ack version, heartbeat version, and session prologue stay the v1
+; numbers in ../v1/wire/bootstrap.cddl. Those bind lease/generation/epoch/
+; digests, not IPC/descriptor version. This file defines launch-descriptor v2
+; only.
+
+launch-descriptor = {
+  0: 2,
+  1: platform,
+  2: lease-id,
+  3: target-nonce,
+  4: app-artifact-digest,       ; SHA-256 of platform-fixed artifact bytes:
+                                ; iOS ios-app-tree-v1 / Android raw-file-v1
+  5: bstr .size 32,             ; one-time Broker static public key
+  6: endpoint,
+  7: uint,                      ; descriptor expiry Unix ms
+  8: target-reference-digest   ; SHA-256 of full UTF-8 target_ reference
+}
+
+platform = 2 / 3                ; 2 iOS Device, 3 Android Device
+endpoint = ios-endpoint / android-endpoint
+; Same bind families as v1. Physical iOS still Target-listens on loopback;
+; Host connects over USB usbmux to that device port. Android remains localabstract.
+ios-endpoint = {
+  0: "127.0.0.1",
+  1: 49152..65535
+}
+android-endpoint = {
+  0: tstr .size (32..96)        ; random localabstract name
+}
+
+target-reference-digest = bstr .size 32
+lease-id = bstr .size 16
+target-nonce = bstr .size 32
+app-artifact-digest = bstr .size 32

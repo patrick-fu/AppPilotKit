@@ -53,6 +53,9 @@ typealias TargetRuntimeCompositionFactory = (processGeneration: Long) -> TargetR
 
 class TargetTransportException(message: String, cause: Throwable? = null) : IllegalStateException(message, cause)
 
+internal fun isAndroidEndpointReady(kind: Int, value0: Long, value1: Long): Boolean =
+    kind == TransportAbi.OUTCOME_ENDPOINT_READY && (value0 == 1L || value0 == 3L) && value1 == 0L
+
 /**
  * A Debug/Internal-only Android Target composition. C1 owns descriptor validation,
  * Noise, framing, bindings, state transitions and deadlines; Kotlin only applies
@@ -204,7 +207,7 @@ class TargetTransport private constructor(
     private fun activate() {
         check(!started && !stopped)
         val initial = supervisor.initialOutcome
-        if (initial.kind != TransportAbi.OUTCOME_ENDPOINT_READY || initial.value0 != 1L || initial.value1 != 0L) {
+        if (!isAndroidEndpointReady(initial.kind, initial.value0, initial.value1)) {
             throw TargetTransportException("C1 returned a non-Android endpoint")
         }
         started = true

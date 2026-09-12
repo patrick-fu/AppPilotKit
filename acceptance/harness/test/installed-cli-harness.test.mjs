@@ -8,6 +8,7 @@ import test from "node:test";
 const repository = resolve(import.meta.dirname, "../../..");
 const harness = join(repository, "acceptance/harness/installed-cli-harness.mjs");
 const contract = join(repository, "acceptance/demo-foundation.contract.json");
+const catalogContract = join(repository, "acceptance/demo-catalog.contract.json");
 
 async function fixture({
   oldSessionFails = true,
@@ -197,6 +198,18 @@ test("explicit diagnostic sidecar reaches both installed prepare invocations wit
   ]);
   const evidence = await readFile(runFixture.evidence, "utf8");
   assert.doesNotMatch(evidence, /prepare-failure|internal_error/);
+});
+
+test("demo.catalog contract freezes the Journey 7 public capability set and secret observation", async () => {
+  const value = JSON.parse(await readFile(catalogContract, "utf8"));
+  assert.equal(value.scenario.id, "demo.catalog");
+  assert.deepEqual(value.scenario.capabilities.resources.map((item) => item.id), ["acceptance.catalog.state"]);
+  assert.deepEqual(value.scenario.capabilities.actions.map((item) => item.id), ["acceptance.catalog.increment", "acceptance.catalog.reset"]);
+  assert.equal(value.scenario.capabilities.resources[0].value_schema.digest, "sha256:b3ffcc96d1da03c447d243ba196f9af01a38447bbb03d5139aed9923c7300804");
+  assert.equal(value.scenario.capabilities.actions[0].input_schema.digest, "sha256:bd75453e5e97b497e4ee54db7cd82f4e654d04da370d8106e645e0bb9769c2fe");
+  assert.equal(value.scenario.capabilities.actions[1].input_schema.digest, "sha256:079b413f2ca72310290f3b07da82503b0dd74c408358570ead26ffeea94efd7c");
+  assert.equal(value.scenario.observations.secret.expected, "never_disclosed");
+  assert.equal(value.scenario.observations.secret.surfaces.includes("machine_result"), true);
 });
 
 test("explicit diagnostic sidecar reaches installed CLI failures without public evidence", async () => {
@@ -403,6 +416,18 @@ test("maps an Android public host platform to the production emulator prepare pl
   assert.equal(outcome.status, 0, outcome.stderr);
   const evidence = JSON.parse(await readFile(runFixture.evidence, "utf8"));
   assert.equal(evidence.platform, "android");
+});
+
+test("accepts an ios-device production prepare platform for the ios host", async () => {
+  const runFixture = await fixture();
+  const config = JSON.parse(await readFile(runFixture.config, "utf8"));
+  config.prepare_request.platform = "ios-device";
+  await writeFile(runFixture.config, JSON.stringify(config));
+  runFixture.preparePlatform = "ios-device";
+  const outcome = run(runFixture);
+  assert.equal(outcome.status, 0, outcome.stderr);
+  const evidence = JSON.parse(await readFile(runFixture.evidence, "utf8"));
+  assert.equal(evidence.platform, "ios");
 });
 
 test("rejects an abstract platform in a production prepare request", async () => {
