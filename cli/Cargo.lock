@@ -48,6 +48,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
 
 [[package]]
+name = "apppilotkit-android-device-adapter"
+version = "0.1.0"
+dependencies = [
+ "apppilotkit-host-runtime",
+ "base64",
+ "getrandom",
+ "libc",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "apppilotkit-android-emulator-adapter"
 version = "0.1.0"
 dependencies = [
@@ -56,6 +67,17 @@ dependencies = [
  "getrandom",
  "libc",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "apppilotkit-apple-device-adapter"
+version = "0.1.0"
+dependencies = [
+ "apppilotkit-apple-simulator-adapter",
+ "apppilotkit-host-runtime",
+ "base64",
+ "libc",
+ "serde_json",
 ]
 
 [[package]]
@@ -96,7 +118,9 @@ dependencies = [
 name = "apppilotkit-production-composition"
 version = "0.1.0"
 dependencies = [
+ "apppilotkit-android-device-adapter",
  "apppilotkit-android-emulator-adapter",
+ "apppilotkit-apple-device-adapter",
  "apppilotkit-apple-simulator-adapter",
  "apppilotkit-cli-contract",
  "apppilotkit-host-runtime",

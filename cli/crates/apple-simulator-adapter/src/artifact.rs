@@ -6,7 +6,7 @@ use sha2::{Digest as _, Sha256};
 use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
-use std::ffi::{CStr, CString, OsString};
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::mem::MaybeUninit;
@@ -181,6 +181,22 @@ impl Observation {
     }
 }
 
+fn require_app_basename(name: &OsStr) -> Result<(), PlatformFailure> {
+    let path = Path::new(name);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(component)), None) if component == name => {}
+        _ => return Err(failure(PlatformFailureKind::Rejected)),
+    }
+    let text = name
+        .to_str()
+        .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+    if !text.ends_with(".app") || text.len() <= 4 {
+        return Err(failure(PlatformFailureKind::Rejected));
+    }
+    Ok(())
+}
+
 pub(super) fn prepare_snapshot(
     source_path: &Path,
     app_id: &str,
@@ -188,7 +204,26 @@ pub(super) fn prepare_snapshot(
     cancellation: &Cancellation,
     deadline: AbsoluteDeadline,
 ) -> Result<PreparedArtifact, PlatformFailure> {
+    prepare_snapshot_as(
+        source_path,
+        OsStr::new("snapshot.app"),
+        app_id,
+        expected_digest,
+        cancellation,
+        deadline,
+    )
+}
+
+pub(super) fn prepare_snapshot_as(
+    source_path: &Path,
+    dest_name: &OsStr,
+    app_id: &str,
+    expected_digest: &[u8; 32],
+    cancellation: &Cancellation,
+    deadline: AbsoluteDeadline,
+) -> Result<PreparedArtifact, PlatformFailure> {
     check_cancel_deadline(cancellation, deadline)?;
+    require_app_basename(dest_name)?;
     let source = open_absolute_directory(source_path)?;
     reject_resource_fork(source.as_raw_fd())?;
     let source_before = fstat(source.as_raw_fd())?;
@@ -203,7 +238,7 @@ pub(super) fn prepare_snapshot(
         .map_err(|_| failure(PlatformFailureKind::Unavailable))?;
     fs::set_permissions(snapshot.path(), fs::Permissions::from_mode(0o700))
         .map_err(|_| failure(PlatformFailureKind::Unavailable))?;
-    let app_path = snapshot.path().join("snapshot.app");
+    let app_path = snapshot.path().join(dest_name);
     fs::create_dir(&app_path).map_err(|_| failure(PlatformFailureKind::Unavailable))?;
     fs::set_permissions(&app_path, fs::Permissions::from_mode(0o700))
         .map_err(|_| failure(PlatformFailureKind::Unavailable))?;

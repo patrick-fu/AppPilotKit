@@ -97,6 +97,8 @@ struct ParsedDescriptor {
     binding: BootstrapBinding,
     broker_public_key: [u8; 32],
     endpoint: Endpoint,
+    version: u8,
+    platform: u8,
 }
 
 enum Phase {
@@ -205,10 +207,11 @@ impl TargetTransport {
     pub fn create(descriptor_cbor: &[u8]) -> Result<(Self, Outcome), SupervisorError> {
         let parsed = parse_descriptor(descriptor_cbor)?;
         let generation = generate_process_generation()?;
-        let (platform, endpoint_value, endpoint_bytes) = match parsed.endpoint {
-            Endpoint::Ios(port) => (0, u64::from(port), None),
-            Endpoint::Android(name) => (1, 0, Some(name.into_bytes())),
+        let (endpoint_value, endpoint_bytes) = match &parsed.endpoint {
+            Endpoint::Ios(port) => (u64::from(*port), None),
+            Endpoint::Android(name) => (0, Some(name.clone().into_bytes())),
         };
+        let platform = u64::from(parsed.platform);
         let transport = Self {
             phase: Phase::AwaitBootstrap {
                 binding: parsed.binding,
@@ -1340,13 +1343,12 @@ fn parse_descriptor(bytes: &[u8]) -> Result<ParsedDescriptor, SupervisorError> {
         return Err(SupervisorError::InvalidArgument);
     }
     expect_key(&mut decoder, 0)?;
-    if decoder.u8().map_err(|_| SupervisorError::InvalidArgument)? != 1 {
-        return Err(SupervisorError::InvalidArgument);
-    }
+    let version = decoder.u8().map_err(|_| SupervisorError::InvalidArgument)?;
     expect_key(&mut decoder, 1)?;
     let platform = decoder.u8().map_err(|_| SupervisorError::InvalidArgument)?;
-    if !matches!(platform, 0 | 1) {
-        return Err(SupervisorError::InvalidArgument);
+    match (version, platform) {
+        (1, 0 | 1) | (2, 2 | 3) => {}
+        _ => return Err(SupervisorError::InvalidArgument),
     }
     expect_key(&mut decoder, 2)?;
     let lease_id = fixed_bytes::<16>(&mut decoder)?;
@@ -1380,6 +1382,8 @@ fn parse_descriptor(bytes: &[u8]) -> Result<ParsedDescriptor, SupervisorError> {
         },
         broker_public_key,
         endpoint,
+        version,
+        platform,
     };
     if encode_descriptor(&parsed)? != bytes {
         return Err(SupervisorError::InvalidArgument);
@@ -1389,7 +1393,7 @@ fn parse_descriptor(bytes: &[u8]) -> Result<ParsedDescriptor, SupervisorError> {
 
 fn parse_endpoint(decoder: &mut Decoder<'_>, platform: u8) -> Result<Endpoint, SupervisorError> {
     match platform {
-        0 => {
+        0 | 2 => {
             if decoder
                 .map()
                 .map_err(|_| SupervisorError::InvalidArgument)?
@@ -1414,7 +1418,7 @@ fn parse_endpoint(decoder: &mut Decoder<'_>, platform: u8) -> Result<Endpoint, S
             }
             Ok(Endpoint::Ios(port))
         }
-        1 => {
+        1 | 3 => {
             if decoder
                 .map()
                 .map_err(|_| SupervisorError::InvalidArgument)?
@@ -1443,15 +1447,12 @@ fn encode_descriptor(parsed: &ParsedDescriptor) -> Result<Vec<u8>, SupervisorErr
         .map_err(|_| SupervisorError::Internal)?
         .u8(0)
         .map_err(|_| SupervisorError::Internal)?
-        .u8(1)
+        .u8(parsed.version)
         .map_err(|_| SupervisorError::Internal)?
         .u8(1)
+        .map_err(|_| SupervisorError::Internal)?
+        .u8(parsed.platform)
         .map_err(|_| SupervisorError::Internal)?;
-    match &parsed.endpoint {
-        Endpoint::Ios(_) => encoder.u8(0),
-        Endpoint::Android(_) => encoder.u8(1),
-    }
-    .map_err(|_| SupervisorError::Internal)?;
     encoder
         .u8(2)
         .map_err(|_| SupervisorError::Internal)?
@@ -1533,6 +1534,15 @@ mod tests {
     use minicbor::Encoder;
 
     fn descriptor(binding: &BootstrapBinding, public_key: [u8; 32], platform: u8) -> Vec<u8> {
+        descriptor_versioned(binding, public_key, 1, platform)
+    }
+
+    fn descriptor_versioned(
+        binding: &BootstrapBinding,
+        public_key: [u8; 32],
+        version: u8,
+        platform: u8,
+    ) -> Vec<u8> {
         let mut bytes = Vec::new();
         let mut encoder = Encoder::new(&mut bytes);
         encoder
@@ -1540,7 +1550,7 @@ mod tests {
             .unwrap()
             .u8(0)
             .unwrap()
-            .u8(1)
+            .u8(version)
             .unwrap()
             .u8(1)
             .unwrap()
@@ -1564,7 +1574,7 @@ mod tests {
             .unwrap()
             .u8(6)
             .unwrap();
-        if platform == 0 {
+        if matches!(platform, 0 | 2) {
             encoder
                 .map(2)
                 .unwrap()
@@ -2260,6 +2270,123 @@ mod tests {
         assert_eq!(ready.value1, 0);
         assert_eq!(ready.bytes.as_deref(), Some(expected.as_bytes()));
         assert!(!ready.bytes.as_deref().expect("endpoint bytes").contains(&0));
+    }
+
+    #[test]
+    fn v2_physical_descriptors_parse_with_matching_endpoints() {
+        let keypair = BrokerStaticKeypair::generate().expect("keypair");
+        let public = keypair.public_key();
+        let ios = descriptor_versioned(&binding(), public, 2, 2);
+        let parsed = parse_descriptor(&ios).expect("v2 iOS device");
+        assert_eq!(parsed.version, 2);
+        assert_eq!(parsed.platform, 2);
+        assert!(matches!(parsed.endpoint, Endpoint::Ios(55_001)));
+        assert_eq!(encode_descriptor(&parsed).expect("roundtrip"), ios);
+        let (_, ready) = TargetTransport::create(&ios).expect("v2 iOS create");
+        assert_eq!(ready.value0, 2);
+        assert_eq!(ready.value1, 55_001);
+
+        let android = descriptor_versioned(&binding(), public, 2, 3);
+        let parsed = parse_descriptor(&android).expect("v2 Android device");
+        assert_eq!(parsed.version, 2);
+        assert_eq!(parsed.platform, 3);
+        assert!(matches!(parsed.endpoint, Endpoint::Android(_)));
+        assert_eq!(encode_descriptor(&parsed).expect("roundtrip"), android);
+        let (_, ready) = TargetTransport::create(&android).expect("v2 Android create");
+        assert_eq!(ready.value0, 3);
+    }
+
+    #[test]
+    fn descriptor_version_and_platform_pairs_fail_closed() {
+        let keypair = BrokerStaticKeypair::generate().expect("keypair");
+        let public = keypair.public_key();
+        assert_eq!(
+            parse_descriptor(&descriptor_versioned(&binding(), public, 1, 2)).err(),
+            Some(SupervisorError::InvalidArgument),
+            "v1 platform 2"
+        );
+        assert_eq!(
+            parse_descriptor(&descriptor_versioned(&binding(), public, 2, 0)).err(),
+            Some(SupervisorError::InvalidArgument),
+            "v2 platform 0"
+        );
+        let mismatched = descriptor_with_endpoint(&binding(), public, 2, 2, false);
+        assert_eq!(
+            parse_descriptor(&mismatched).err(),
+            Some(SupervisorError::InvalidArgument),
+            "v2 platform 2 requires ios loopback"
+        );
+    }
+
+    fn descriptor_with_endpoint(
+        binding: &BootstrapBinding,
+        public_key: [u8; 32],
+        version: u8,
+        platform: u8,
+        ios_endpoint: bool,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut encoder = Encoder::new(&mut bytes);
+        encoder
+            .map(9)
+            .unwrap()
+            .u8(0)
+            .unwrap()
+            .u8(version)
+            .unwrap()
+            .u8(1)
+            .unwrap()
+            .u8(platform)
+            .unwrap()
+            .u8(2)
+            .unwrap()
+            .bytes(&binding.lease_id)
+            .unwrap()
+            .u8(3)
+            .unwrap()
+            .bytes(&binding.target_nonce)
+            .unwrap()
+            .u8(4)
+            .unwrap()
+            .bytes(&binding.app_artifact_digest)
+            .unwrap()
+            .u8(5)
+            .unwrap()
+            .bytes(&public_key)
+            .unwrap()
+            .u8(6)
+            .unwrap();
+        if ios_endpoint {
+            encoder
+                .map(2)
+                .unwrap()
+                .u8(0)
+                .unwrap()
+                .str("127.0.0.1")
+                .unwrap()
+                .u8(1)
+                .unwrap()
+                .u16(55_001)
+                .unwrap();
+        } else {
+            encoder
+                .map(1)
+                .unwrap()
+                .u8(0)
+                .unwrap()
+                .str("apppilotkit-0123456789abcdef0123456789abcdef")
+                .unwrap();
+        }
+        encoder
+            .u8(7)
+            .unwrap()
+            .u64(binding.expiry_ms)
+            .unwrap()
+            .u8(8)
+            .unwrap()
+            .bytes(&binding.target_reference_digest)
+            .unwrap();
+        bytes
     }
 
     #[test]

@@ -95,6 +95,25 @@ impl core::fmt::Debug for ReadyReference {
 pub enum Platform {
     IosSimulator = 0,
     AndroidEmulator = 1,
+    IosDevice = 2,
+    AndroidDevice = 3,
+}
+
+const IPC_V1: u8 = 1;
+const IPC_V2: u8 = 2;
+
+fn require_ipc_version(version: u8) -> Result<u8, ControlFailure> {
+    match version {
+        IPC_V1 | IPC_V2 => Ok(version),
+        _ => Err(ControlFailure::ipc(CloseReason::Malformed)),
+    }
+}
+
+const fn artifact_encoding(platform: Platform) -> u8 {
+    match platform {
+        Platform::IosSimulator | Platform::IosDevice => 0,
+        Platform::AndroidEmulator | Platform::AndroidDevice => 1,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -346,6 +365,13 @@ impl ControlPacketDecoder {
         decode_request_packet(&self.pending).map(Some)
     }
 
+    /// CBOR-decodes request map key 0 from the packet buffered after a
+    /// successful [`push`]. `pending` stays private so `Request<T>` does not
+    /// need a version field.
+    pub fn ipc_version(&self) -> Result<u8, ControlFailure> {
+        peek_request_ipc_version(&self.pending)
+    }
+
     fn reject<T>(&mut self, reason: CloseReason) -> Result<T, ControlFailure> {
         self.finished = true;
         self.pending.clear();
@@ -382,7 +408,7 @@ fn request_operation_prefix(cbor: &[u8]) -> Option<u8> {
     let mut decoder = Decoder::new(cbor);
     if decoder.map().ok()? != Some(5)
         || decoder.u8().ok()? != 0
-        || decoder.u8().ok()? != 1
+        || !matches!(decoder.u8().ok()?, IPC_V1 | IPC_V2)
         || decoder.u8().ok()? != 1
         || decoder.bytes().ok()?.len() != 16
         || decoder.u8().ok()? != 2
@@ -465,8 +491,30 @@ pub fn decode_request_packet(packet: &[u8]) -> Result<ControlRequest, ControlFai
     decode_request(cbor, operation)
 }
 
+fn peek_request_ipc_version(packet: &[u8]) -> Result<u8, ControlFailure> {
+    let cbor = unframe(packet)?;
+    let mut decoder = Decoder::new(cbor);
+    require_map(&mut decoder, 5)?;
+    require_key(&mut decoder, 0)?;
+    require_ipc_version(decoder.u8().map_err(decode_error)?)
+}
+
 /// Encodes the client half of the frozen Broker control contract.
 pub fn encode_request_packet(request: &ControlRequest) -> Result<Vec<u8>, ControlFailure> {
+    encode_request_packet_version(request, IPC_V1)
+}
+
+/// Explicit v2 producer for tests and later physical Prepare. Simulator/Emulator
+/// Prepare and all open/exchange/close keep [`encode_request_packet`].
+pub fn encode_request_packet_v2(request: &ControlRequest) -> Result<Vec<u8>, ControlFailure> {
+    encode_request_packet_version(request, IPC_V2)
+}
+
+fn encode_request_packet_version(
+    request: &ControlRequest,
+    ipc_version: u8,
+) -> Result<Vec<u8>, ControlFailure> {
+    require_ipc_version(ipc_version)?;
     let (request_id, deadline, operation) = match request {
         ControlRequest::Prepare(value) => (value.request_id, value.deadline_unix_ms, 0),
         ControlRequest::OpenSession(value) => (value.request_id, value.deadline_unix_ms, 1),
@@ -482,7 +530,7 @@ pub fn encode_request_packet(request: &ControlRequest) -> Result<Vec<u8>, Contro
             .map_err(encode_error)?
             .u8(0)
             .map_err(encode_error)?
-            .u8(1)
+            .u8(ipc_version)
             .map_err(encode_error)?
             .u8(1)
             .map_err(encode_error)?
@@ -499,6 +547,9 @@ pub fn encode_request_packet(request: &ControlRequest) -> Result<Vec<u8>, Contro
             .u8(4)
             .map_err(encode_error)?;
         match request {
+            ControlRequest::Prepare(value) if ipc_version == IPC_V2 => {
+                encode_prepare_v2(&mut encoder, &value.body)?
+            }
             ControlRequest::Prepare(value) => encode_prepare(&mut encoder, &value.body)?,
             ControlRequest::OpenSession(value) => encode_open(&mut encoder, &value.body)?,
             ControlRequest::Exchange(value) => encode_exchange(&mut encoder, &value.body)?,
@@ -518,6 +569,8 @@ pub fn encode_request_packet(request: &ControlRequest) -> Result<Vec<u8>, Contro
     Ok(packet)
 }
 
+// v1 CDDL lists artifact-encoding key 5, but production v1 wire is this 5-key
+// body; encoding is implied by platform. v2 is the consistent 6-key body.
 fn encode_prepare(
     encoder: &mut Encoder<&mut Vec<u8>>,
     body: &PrepareBody,
@@ -544,6 +597,40 @@ fn encode_prepare(
         .u8(4)
         .map_err(encode_error)?
         .bytes(&body.app_artifact_sha256)
+        .map_err(encode_error)?;
+    Ok(())
+}
+
+fn encode_prepare_v2(
+    encoder: &mut Encoder<&mut Vec<u8>>,
+    body: &PrepareBody,
+) -> Result<(), ControlFailure> {
+    encoder
+        .map(6)
+        .map_err(encode_error)?
+        .u8(0)
+        .map_err(encode_error)?
+        .u8(body.platform as u8)
+        .map_err(encode_error)?
+        .u8(1)
+        .map_err(encode_error)?
+        .str(&body.device_selector)
+        .map_err(encode_error)?
+        .u8(2)
+        .map_err(encode_error)?
+        .str(&body.app_id)
+        .map_err(encode_error)?
+        .u8(3)
+        .map_err(encode_error)?
+        .str(&body.app_artifact)
+        .map_err(encode_error)?
+        .u8(4)
+        .map_err(encode_error)?
+        .bytes(&body.app_artifact_sha256)
+        .map_err(encode_error)?
+        .u8(5)
+        .map_err(encode_error)?
+        .u8(artifact_encoding(body.platform))
         .map_err(encode_error)?;
     Ok(())
 }
@@ -688,9 +775,7 @@ pub fn decode_result_packet(packet: &[u8]) -> Result<ControlResult, ControlFailu
     let mut decoder = Decoder::new(cbor);
     require_map(&mut decoder, 4)?;
     require_key(&mut decoder, 0)?;
-    if decoder.u8().map_err(decode_error)? != 1 {
-        return Err(ControlFailure::ipc(CloseReason::Malformed));
-    }
+    require_ipc_version(decoder.u8().map_err(decode_error)?)?;
     require_key(&mut decoder, 1)?;
     let request_id = fixed(decoder.bytes().map_err(decode_error)?)?;
     require_key(&mut decoder, 2)?;
@@ -935,6 +1020,15 @@ pub fn encode_success_packet(
     request_id: [u8; 16],
     success: ControlSuccess,
 ) -> Result<Vec<u8>, ControlFailure> {
+    encode_success_packet_versioned(request_id, success, IPC_V1)
+}
+
+pub fn encode_success_packet_versioned(
+    request_id: [u8; 16],
+    success: ControlSuccess,
+    ipc_version: u8,
+) -> Result<Vec<u8>, ControlFailure> {
+    require_ipc_version(ipc_version)?;
     validate_success(&success)?;
     let mut cbor = Vec::new();
     {
@@ -943,7 +1037,7 @@ pub fn encode_success_packet(
         encoder
             .u8(0)
             .map_err(encode_error)?
-            .u8(1)
+            .u8(ipc_version)
             .map_err(encode_error)?;
         encoder
             .u8(1)
@@ -1023,6 +1117,15 @@ pub fn encode_failure_packet(
     request_id: [u8; 16],
     failure: &ControlFailure,
 ) -> Result<Vec<u8>, ControlFailure> {
+    encode_failure_packet_versioned(request_id, failure, IPC_V1)
+}
+
+pub fn encode_failure_packet_versioned(
+    request_id: [u8; 16],
+    failure: &ControlFailure,
+    ipc_version: u8,
+) -> Result<Vec<u8>, ControlFailure> {
+    require_ipc_version(ipc_version)?;
     if failure.message.is_empty()
         || failure.message.len() > 256
         || failure
@@ -1038,7 +1141,7 @@ pub fn encode_failure_packet(
     encoder
         .u8(0)
         .map_err(encode_error)?
-        .u8(1)
+        .u8(ipc_version)
         .map_err(encode_error)?;
     encoder
         .u8(1)
@@ -1276,9 +1379,7 @@ fn request_operation(cbor: &[u8]) -> Result<u8, ControlFailure> {
     let mut decoder = Decoder::new(cbor);
     require_map(&mut decoder, 5)?;
     require_key(&mut decoder, 0)?;
-    if decoder.u8().map_err(decode_error)? != 1 {
-        return Err(ControlFailure::ipc(CloseReason::Malformed));
-    }
+    require_ipc_version(decoder.u8().map_err(decode_error)?)?;
     require_key(&mut decoder, 1)?;
     let request_id = decoder.bytes().map_err(decode_error)?;
     if request_id.len() != 16 {
@@ -1298,9 +1399,7 @@ fn decode_request(cbor: &[u8], operation: u8) -> Result<ControlRequest, ControlF
     let mut decoder = Decoder::new(cbor);
     require_map(&mut decoder, 5)?;
     require_key(&mut decoder, 0)?;
-    if decoder.u8().map_err(decode_error)? != 1 {
-        return Err(ControlFailure::ipc(CloseReason::Malformed));
-    }
+    let ipc_version = require_ipc_version(decoder.u8().map_err(decode_error)?)?;
     require_key(&mut decoder, 1)?;
     let request_id = fixed::<16>(decoder.bytes().map_err(decode_error)?)?;
     require_key(&mut decoder, 2)?;
@@ -1315,7 +1414,7 @@ fn decode_request(cbor: &[u8], operation: u8) -> Result<ControlRequest, ControlF
         0 => ControlRequest::Prepare(Request {
             request_id,
             deadline_unix_ms,
-            body: decode_prepare(&mut decoder)?,
+            body: decode_prepare(&mut decoder, ipc_version)?,
         }),
         1 => ControlRequest::OpenSession(Request {
             request_id,
@@ -1345,14 +1444,49 @@ fn decode_request(cbor: &[u8], operation: u8) -> Result<ControlRequest, ControlF
     Ok(request)
 }
 
-fn decode_prepare(decoder: &mut Decoder<'_>) -> Result<PrepareBody, ControlFailure> {
-    require_map(decoder, 5)?;
-    require_key(decoder, 0)?;
-    let platform = match decoder.u8().map_err(decode_error)? {
-        0 => Platform::IosSimulator,
-        1 => Platform::AndroidEmulator,
-        _ => return Err(ControlFailure::ipc(CloseReason::Malformed)),
-    };
+fn decode_prepare(
+    decoder: &mut Decoder<'_>,
+    ipc_version: u8,
+) -> Result<PrepareBody, ControlFailure> {
+    match ipc_version {
+        IPC_V1 => {
+            // v1 CDDL lists artifact-encoding key 5, but production v1 wire is
+            // 5 keys; platform 2/3 stay Malformed on this path.
+            require_map(decoder, 5)?;
+            require_key(decoder, 0)?;
+            let platform = match decoder.u8().map_err(decode_error)? {
+                0 => Platform::IosSimulator,
+                1 => Platform::AndroidEmulator,
+                _ => return Err(ControlFailure::ipc(CloseReason::Malformed)),
+            };
+            decode_prepare_fields(decoder, platform)
+        }
+        IPC_V2 => {
+            require_map(decoder, 6)?;
+            require_key(decoder, 0)?;
+            let platform = match decoder.u8().map_err(decode_error)? {
+                0 => Platform::IosSimulator,
+                1 => Platform::AndroidEmulator,
+                2 => Platform::IosDevice,
+                3 => Platform::AndroidDevice,
+                _ => return Err(ControlFailure::ipc(CloseReason::Malformed)),
+            };
+            let body = decode_prepare_fields(decoder, platform)?;
+            require_key(decoder, 5)?;
+            let encoding = decoder.u8().map_err(decode_error)?;
+            if encoding > 1 || encoding != artifact_encoding(platform) {
+                return Err(ControlFailure::ipc(CloseReason::Malformed));
+            }
+            Ok(body)
+        }
+        _ => Err(ControlFailure::ipc(CloseReason::Malformed)),
+    }
+}
+
+fn decode_prepare_fields(
+    decoder: &mut Decoder<'_>,
+    platform: Platform,
+) -> Result<PrepareBody, ControlFailure> {
     require_key(decoder, 1)?;
     let device_selector = decoder.str().map_err(decode_error)?.to_owned();
     if !(1..=256).contains(&device_selector.len())

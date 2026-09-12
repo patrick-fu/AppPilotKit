@@ -90,6 +90,53 @@ pub fn inspect_ios_app_tree_digest(
     Ok(artifact::inspect_bundle(app_path, app_id, cancellation, deadline)?.digest)
 }
 
+/// Immutable Host `.app` snapshot that keeps the source bundle filename.
+///
+/// This reuses the Simulator tree copier. Launch ownership remains behind
+/// `PlatformTargetAdapter`.
+pub struct PreparedIosAppSnapshot {
+    inner: artifact::PreparedArtifact,
+}
+
+impl PreparedIosAppSnapshot {
+    /// Snapshot directory installed in place of the caller-selected path.
+    pub fn app_path(&self) -> &Path {
+        self.inner.app_path()
+    }
+
+    /// Canonical `ios-app-tree-v1` digest of the snapshot.
+    pub fn digest(&self) -> [u8; 32] {
+        self.inner.identity.digest
+    }
+
+    /// `CFBundleExecutable` from the Host snapshot Info.plist.
+    pub fn executable(&self) -> &str {
+        &self.inner.identity.executable
+    }
+}
+
+/// Copies the selected `.app` into an immutable snapshot named after the source.
+pub fn prepare_ios_app_snapshot(
+    source_path: &Path,
+    app_id: &str,
+    expected_digest: &[u8; 32],
+    cancellation: &Cancellation,
+    deadline: AbsoluteDeadline,
+) -> Result<PreparedIosAppSnapshot, PlatformFailure> {
+    let dest_name = source_path
+        .file_name()
+        .ok_or_else(|| failure(PlatformFailureKind::Rejected))?;
+    let inner = artifact::prepare_snapshot_as(
+        source_path,
+        dest_name,
+        app_id,
+        expected_digest,
+        cancellation,
+        deadline,
+    )?;
+    Ok(PreparedIosAppSnapshot { inner })
+}
+
 /// Exact-target Apple Simulator adapter backed by one explicit `xcrun` path.
 pub struct AppleSimulatorAdapter {
     runner: Arc<dyn ToolRunner>,

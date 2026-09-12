@@ -3,7 +3,9 @@ members = [
     "crates/cli-contract",
     "crates/host-runtime",
     "crates/apple-simulator-adapter",
+    "crates/apple-device-adapter",
     "crates/android-emulator-adapter",
+    "crates/android-device-adapter",
     "crates/production-composition",
     "spikes/rust-foundation",
 ]

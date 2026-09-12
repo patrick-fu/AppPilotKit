@@ -9,9 +9,9 @@ import { isDeepStrictEqual } from "node:util";
 
 const REDACTED = "<redacted>";
 const capabilityId = "acceptance.foundation.state";
-const preparePlatformByHostPlatform = Object.freeze({
-  ios: "ios-simulator",
-  android: "android-emulator",
+const allowedPreparePlatformsByHostPlatform = Object.freeze({
+  ios: Object.freeze(["ios-simulator", "ios-device"]),
+  android: Object.freeze(["android-emulator", "android-device"]),
 });
 const prepareEncodingByHostPlatform = Object.freeze({
   ios: "ios-app-tree-v1",
@@ -784,9 +784,9 @@ async function main() {
   const expectedPrepareRequestKeys = ["app_artifact", "app_id", "artifact_encoding", "device_selector", "platform", "schema_version"];
   if (!isDeepStrictEqual(Object.keys(request).sort(), expectedPrepareRequestKeys)) fail("prepare request must contain exactly six keys");
   if (request.schema_version !== "1.0") fail("prepare request schema_version must be 1.0");
-  const preparePlatform = preparePlatformByHostPlatform[platform];
-  if (request.platform !== preparePlatform) {
-    fail(`prepare request platform must be ${preparePlatform} for configuration platform ${platform}`);
+  const allowedPreparePlatforms = allowedPreparePlatformsByHostPlatform[platform];
+  if (!allowedPreparePlatforms.includes(request.platform)) {
+    fail(`prepare request platform must be ${allowedPreparePlatforms.join(" or ")} for configuration platform ${platform}`);
   }
   for (const name of ["device_selector", "app_id", "app_artifact", "artifact_encoding"]) requireString(request[name], `prepare request ${name}`);
   if (!isAbsolute(request.app_artifact)) fail("prepare request app_artifact must be absolute");

@@ -3,7 +3,8 @@ use apppilotkit_host_runtime::{
     ControlSuccess, ErrorKind, ErrorStage, ExchangeBody, ExchangeComplete, HandoffState,
     OpenSessionBody, Platform, PrepareBody, ReadyReference, ReadyTarget, Request, SessionOpened,
     SideEffect, decode_request_packet, decode_result_packet, encode_failure_packet,
-    encode_request_packet, encode_success_packet,
+    encode_request_packet, encode_request_packet_v2, encode_success_packet,
+    encode_success_packet_versioned,
 };
 use sha2::{Digest, Sha256};
 
@@ -382,4 +383,157 @@ fn worked_success_literals_are_byte_exact() {
             }
         );
     }
+}
+
+fn decode_result_packet_v1_only(packet: &[u8]) -> Result<ControlResult, ControlFailure> {
+    // Historical Broker: packet key 0 must be 1 (`version != 1` => Malformed).
+    if packet.len() < 7 || packet[6] != 1 {
+        return Err(ControlFailure::ipc(CloseReason::Malformed));
+    }
+    decode_result_packet(packet)
+}
+
+fn ios_device_prepare() -> ControlRequest {
+    ControlRequest::Prepare(Request {
+        request_id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        deadline_unix_ms: 10_000,
+        body: PrepareBody {
+            platform: Platform::IosDevice,
+            device_selector: "sim".to_owned(),
+            app_id: "dev.app".to_owned(),
+            app_artifact: "/tmp/App.app".to_owned(),
+            app_artifact_sha256: [0x11; 32],
+        },
+    })
+}
+
+fn android_device_prepare() -> ControlRequest {
+    ControlRequest::Prepare(Request {
+        request_id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        deadline_unix_ms: 10_000,
+        body: PrepareBody {
+            platform: Platform::AndroidDevice,
+            device_selector: "serial".to_owned(),
+            app_id: "dev.app".to_owned(),
+            app_artifact: "/tmp/app.apk".to_owned(),
+            app_artifact_sha256: [0x11; 32],
+        },
+    })
+}
+
+#[test]
+fn v1_prepare_with_platform_2_is_malformed() {
+    let mut packet = hex(
+        "0000005ea500010150000102030405060708090a0b0c0d0e0f02192710030004a50000016373696d02676465762e617070036c2f746d702f4170702e6170700458201111111111111111111111111111111111111111111111111111111111111111",
+    );
+    let body_platform = packet
+        .windows(4)
+        .position(|window| window == [0x04, 0xa5, 0x00, 0x00])
+        .expect("v1 5-key prepare body");
+    packet[body_platform + 3] = 2;
+    let error = decode_request_packet(&packet).expect_err("v1 platform 2");
+    assert_eq!(error.close_reason, CloseReason::Malformed);
+}
+
+#[test]
+fn v2_prepare_platform_2_encoding_0_roundtrips_on_real_codec() {
+    let request = ios_device_prepare();
+    let packet = encode_request_packet_v2(&request).expect("v2 prepare");
+    let decoded = decode_request_packet(&packet).expect("dual decode v2");
+    assert_eq!(decoded, request);
+    assert_eq!(
+        encode_request_packet_v2(&decoded).expect("re-encode"),
+        packet
+    );
+    let ControlRequest::Prepare(prepared) = decoded else {
+        panic!("prepare");
+    };
+    assert_eq!(prepared.body.platform, Platform::IosDevice);
+}
+
+#[test]
+fn v2_prepare_platform_2_encoding_1_is_malformed() {
+    let mut packet = encode_request_packet_v2(&ios_device_prepare()).expect("v2 prepare");
+    assert_eq!(*packet.last().expect("encoding"), 0);
+    *packet.last_mut().expect("encoding") = 1;
+    let error = decode_request_packet(&packet).expect_err("encoding mismatch");
+    assert_eq!(error.close_reason, CloseReason::Malformed);
+}
+
+#[test]
+fn v2_prepare_platform_3_encoding_1_roundtrips_on_real_codec() {
+    let request = android_device_prepare();
+    let packet = encode_request_packet_v2(&request).expect("v2 prepare");
+    let decoded = decode_request_packet(&packet).expect("dual decode v2");
+    assert_eq!(decoded, request);
+    assert_eq!(
+        encode_request_packet_v2(&decoded).expect("re-encode"),
+        packet
+    );
+    let ControlRequest::Prepare(prepared) = decoded else {
+        panic!("prepare");
+    };
+    assert_eq!(prepared.body.platform, Platform::AndroidDevice);
+    assert_eq!(*packet.last().expect("encoding"), 1);
+}
+
+#[test]
+fn v2_prepare_platform_3_encoding_0_is_malformed() {
+    let mut packet = encode_request_packet_v2(&android_device_prepare()).expect("v2 prepare");
+    assert_eq!(*packet.last().expect("encoding"), 1);
+    *packet.last_mut().expect("encoding") = 0;
+    let error = decode_request_packet(&packet).expect_err("encoding mismatch");
+    assert_eq!(error.close_reason, CloseReason::Malformed);
+}
+
+#[test]
+fn decoder_exposes_buffered_request_ipc_version_after_push() {
+    let mut decoder = ControlPacketDecoder::new();
+    assert!(decoder.ipc_version().is_err());
+    let v1 = encode_request_packet(&ControlRequest::Prepare(Request {
+        request_id: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        deadline_unix_ms: 10_000,
+        body: PrepareBody {
+            platform: Platform::IosSimulator,
+            device_selector: "sim".to_owned(),
+            app_id: "dev.app".to_owned(),
+            app_artifact: "/tmp/App.app".to_owned(),
+            app_artifact_sha256: [0x11; 32],
+        },
+    }))
+    .expect("v1 prepare");
+    assert!(decoder.push(&v1).expect("push v1").is_some());
+    assert_eq!(decoder.ipc_version().expect("v1 version"), 1);
+
+    let mut decoder = ControlPacketDecoder::new();
+    let v2 = encode_request_packet_v2(&ios_device_prepare()).expect("v2 prepare");
+    assert!(decoder.push(&v2).expect("push v2").is_some());
+    assert_eq!(decoder.ipc_version().expect("v2 version"), 2);
+}
+
+#[test]
+fn v2_success_echoes_version_and_old_v1_result_decoder_rejects_it() {
+    let success = ControlSuccess::TargetReady(ReadyTarget {
+        target_token: [0; 32],
+        process_generation: 1,
+        listener_epoch: 1,
+        issued_at_unix_ms: 1_000,
+        expires_at_unix_ms: 31_000,
+    });
+    let packet = encode_success_packet_versioned([0; 16], success.clone(), 2).expect("v2 success");
+    assert_eq!(packet[6], 2, "result key 0 is version 2");
+    let decoded = decode_result_packet(&packet).expect("dual decode result");
+    assert_eq!(
+        decoded,
+        ControlResult::Success {
+            request_id: [0; 16],
+            result: success,
+        }
+    );
+    assert_eq!(
+        decode_result_packet_v1_only(&packet)
+            .expect_err("historical v1-only result decoder")
+            .close_reason,
+        CloseReason::Malformed
+    );
 }

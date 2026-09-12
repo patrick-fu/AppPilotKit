@@ -105,7 +105,7 @@ public actor AppPilotKitTargetTransport {
   func activate() async throws {
     guard !started, !stopped,
       initialOutcome.kind == UInt32(APK_TP_OUTCOME_ENDPOINT_READY),
-      initialOutcome.value0 == 0,
+      initialOutcome.value0 == 0 || initialOutcome.value0 == 2,
       let port = UInt16(exactly: initialOutcome.value1),
       port >= 49_152
     else {

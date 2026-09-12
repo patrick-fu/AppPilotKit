@@ -418,6 +418,18 @@ test("maps an Android public host platform to the production emulator prepare pl
   assert.equal(evidence.platform, "android");
 });
 
+test("accepts an ios-device production prepare platform for the ios host", async () => {
+  const runFixture = await fixture();
+  const config = JSON.parse(await readFile(runFixture.config, "utf8"));
+  config.prepare_request.platform = "ios-device";
+  await writeFile(runFixture.config, JSON.stringify(config));
+  runFixture.preparePlatform = "ios-device";
+  const outcome = run(runFixture);
+  assert.equal(outcome.status, 0, outcome.stderr);
+  const evidence = JSON.parse(await readFile(runFixture.evidence, "utf8"));
+  assert.equal(evidence.platform, "ios");
+});
+
 test("rejects an abstract platform in a production prepare request", async () => {
   const runFixture = await fixture();
   const config = JSON.parse(await readFile(runFixture.config, "utf8"));

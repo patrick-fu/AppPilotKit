@@ -189,6 +189,7 @@ derived_data="$work_root/derived-data-$cache_key"
     -derivedDataPath "$derived_data" \
     CODE_SIGNING_ALLOWED=NO \
     PRODUCT_BUNDLE_IDENTIFIER=dev.apppilotkit.acceptancehost.ios \
+    SWIFT_USE_PARALLEL_JOBS=NO \
     "OTHER_LDFLAGS=-L$ffi_dir"
 )
 executable="$derived_data/Build/Products/Debug-iphonesimulator/AcceptanceHost"
