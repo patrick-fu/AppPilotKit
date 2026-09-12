@@ -18,6 +18,13 @@ const COLLIDING_PROCESS_PATH: &str =
     "/private/var/containers/Bundle/Application/BBBB/DeviceHost.app/DeviceHost";
 static NEXT_TEST_ID: AtomicUsize = AtomicUsize::new(1);
 
+fn unique_app_id(label: &str) -> String {
+    format!(
+        "dev.apppilotkit.DeviceHost.{label}.{}",
+        NEXT_TEST_ID.fetch_add(1, Ordering::SeqCst)
+    )
+}
+
 fn deadline_after(ms: u64) -> AbsoluteDeadline {
     require(AbsoluteDeadline::new(require(unix_ms()) + ms))
 }
@@ -69,10 +76,6 @@ struct TempArtifact {
 }
 
 impl TempArtifact {
-    fn new(label: &str) -> Self {
-        Self::with_app_id(label, "dev.apppilotkit.DeviceHost")
-    }
-
     fn with_app_id(label: &str, app_id: &str) -> Self {
         let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
         let temp = fs::canonicalize(std::env::temp_dir()).expect("canonical test temp");
@@ -498,10 +501,10 @@ fn launch_once(
 
 #[test]
 fn coredevice_uuid_selector_is_rejected_without_usb() {
-    let artifact = TempArtifact::new("coredevice");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("coredevice");
+    let artifact = TempArtifact::with_app_id("coredevice", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
     let invalid = require(TargetSelection::new(
@@ -523,17 +526,17 @@ fn coredevice_uuid_selector_is_rejected_without_usb() {
 
 #[test]
 fn usb_miss_and_network_only_are_unavailable() {
-    let artifact = TempArtifact::new("usb-miss");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("usb-miss");
+    let artifact = TempArtifact::with_app_id("usb-miss", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     usb.set_connection("Network");
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
     let failure = require_err(
         adapter
             .begin_launch(
-                selection(&artifact.app, app_id, digest),
+                selection(&artifact.app, &app_id, digest),
                 deadline_after(1_000),
             )
             .launch(
@@ -549,15 +552,15 @@ fn usb_miss_and_network_only_are_unavailable() {
 
 #[test]
 fn digest_mismatch_is_rejected_after_usb_gate() {
-    let artifact = TempArtifact::new("digest");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("digest");
+    let artifact = TempArtifact::with_app_id("digest", &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
     let failure = require_err(
         adapter
             .begin_launch(
-                selection(&artifact.app, app_id, [0x11; 32]),
+                selection(&artifact.app, &app_id, [0x11; 32]),
                 deadline_after(1_000),
             )
             .launch(
@@ -574,14 +577,14 @@ fn digest_mismatch_is_rejected_after_usb_gate() {
 
 #[test]
 fn occupied_process_list_is_rejected_without_launch() {
-    let artifact = TempArtifact::new("occupied");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("occupied");
+    let artifact = TempArtifact::with_app_id("occupied", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     runner.seed_occupied();
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let failure = require_err(launch_once(&adapter, &artifact, app_id, digest));
+    let failure = require_err(launch_once(&adapter, &artifact, &app_id, digest));
     assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
     assert_eq!(runner.install_calls.load(Ordering::SeqCst), 0);
     assert_eq!(runner.launch_calls.load(Ordering::SeqCst), 0);
@@ -590,14 +593,14 @@ fn occupied_process_list_is_rejected_without_launch() {
 
 #[test]
 fn launch_installs_proves_pid_and_cleans_lease() {
-    let artifact = TempArtifact::new("launch");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("launch");
+    let artifact = TempArtifact::with_app_id("launch", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
     let pending = adapter.begin_launch(
-        selection(&artifact.app, app_id, digest),
+        selection(&artifact.app, &app_id, digest),
         deadline_after(5_000),
     );
     let port = pending.endpoint().ios_port().expect("iOS loopback");
@@ -659,15 +662,15 @@ fn launch_installs_proves_pid_and_cleans_lease() {
 
 #[test]
 fn launch_takeover_does_not_retry_connrefused() {
-    let artifact = TempArtifact::new("launch-takeover");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("launch-takeover");
+    let artifact = TempArtifact::with_app_id("launch-takeover", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     usb.refuse_first_connect();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
     let pending = adapter.begin_launch(
-        selection(&artifact.app, app_id, digest),
+        selection(&artifact.app, &app_id, digest),
         deadline_after(5_000),
     );
     let port = pending.endpoint().ios_port().expect("iOS loopback");
@@ -689,14 +692,14 @@ fn launch_takeover_does_not_retry_connrefused() {
 
 #[test]
 fn present_app_is_rejected_without_install_or_launch() {
-    let artifact = TempArtifact::new("present");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("present");
+    let artifact = TempArtifact::with_app_id("present", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     runner.apps_present.store(true, Ordering::SeqCst);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let failure = require_err(launch_once(&adapter, &artifact, app_id, digest));
+    let failure = require_err(launch_once(&adapter, &artifact, &app_id, digest));
     assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
     assert_eq!(runner.install_calls.load(Ordering::SeqCst), 0);
     assert_eq!(runner.launch_calls.load(Ordering::SeqCst), 0);
@@ -814,14 +817,14 @@ fn absent_apps_catalog_is_empty_result_apps() {
 
 #[test]
 fn failed_install_that_leaves_the_app_is_uninstalled() {
-    let artifact = TempArtifact::new("install-fail");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("install-fail");
+    let artifact = TempArtifact::with_app_id("install-fail", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     runner.install_fails.store(true, Ordering::SeqCst);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let failure = require_err(launch_once(&adapter, &artifact, app_id, digest));
+    let failure = require_err(launch_once(&adapter, &artifact, &app_id, digest));
     assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
     assert_eq!(runner.install_calls.load(Ordering::SeqCst), 1);
     assert_eq!(runner.uninstall_calls.load(Ordering::SeqCst), 1);
@@ -871,13 +874,13 @@ fn terminate_of_pid_with_different_executable_does_not_kill() {
 
 #[test]
 fn session_reconnect_does_not_retry_connrefused() {
-    let artifact = TempArtifact::new("session-reconnect");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("session-reconnect");
+    let artifact = TempArtifact::with_app_id("session-reconnect", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let launched = require(launch_once(&adapter, &artifact, app_id, digest));
+    let launched = require(launch_once(&adapter, &artifact, &app_id, digest));
     let (bootstrap, connector, cleanup) = launched.into_parts();
     usb.refuse_first_connect();
     let before = usb.connects.lock().expect("connects").len();
@@ -890,13 +893,13 @@ fn session_reconnect_does_not_retry_connrefused() {
 
 #[test]
 fn install_uses_snapshot_path_not_the_caller_path() {
-    let artifact = TempArtifact::new("snapshot-path");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("snapshot-path");
+    let artifact = TempArtifact::with_app_id("snapshot-path", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let launched = require(launch_once(&adapter, &artifact, app_id, digest));
+    let launched = require(launch_once(&adapter, &artifact, &app_id, digest));
     require(
         launched
             .into_parts()
@@ -922,15 +925,15 @@ fn install_uses_snapshot_path_not_the_caller_path() {
 
 #[test]
 fn post_install_prove_requires_exact_apps_url_path() {
-    let artifact = TempArtifact::new("exact-prove");
-    let app_id = "dev.apppilotkit.DeviceHost";
-    let digest = digest_for(&artifact.app, app_id);
-    let runner = FakeRunner::new(app_id);
+    let app_id = unique_app_id("exact-prove");
+    let artifact = TempArtifact::with_app_id("exact-prove", &app_id);
+    let digest = digest_for(&artifact.app, &app_id);
+    let runner = FakeRunner::new(&app_id);
     *runner.launch_executable.lock().expect("launch executable") =
         Some(COLLIDING_PROCESS_PATH.to_owned());
     let usb = FakeUsbMux::usb();
     let adapter = test_adapter(Arc::clone(&runner), Arc::clone(&usb));
-    let failure = require_err(launch_once(&adapter, &artifact, app_id, digest));
+    let failure = require_err(launch_once(&adapter, &artifact, &app_id, digest));
     assert_eq!(failure.kind(), PlatformFailureKind::Rejected);
     assert_eq!(runner.launch_calls.load(Ordering::SeqCst), 1);
     assert_eq!(runner.uninstall_calls.load(Ordering::SeqCst), 1);
