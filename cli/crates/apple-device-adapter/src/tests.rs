@@ -256,7 +256,7 @@ impl ToolRunner for Arc<FakeRunner> {
             .iter()
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        if args.get(0).map(String::as_str) == Some("devicectl")
+        if args.first().map(String::as_str) == Some("devicectl")
             && args.get(1).map(String::as_str) == Some("help")
         {
             return Ok(success_stderr(

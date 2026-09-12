@@ -436,7 +436,7 @@ impl AdbClient<'_> {
         if success {
             return Ok(stdout);
         }
-        if strip_one_line_ending(&stdout)? == "" {
+        if strip_one_line_ending(&stdout)?.is_empty() {
             Ok(String::new())
         } else {
             Err(failure(PlatformFailureKind::Unavailable))
@@ -495,12 +495,13 @@ impl AdbClient<'_> {
         cancellation: &Cancellation,
         deadline: AbsoluteDeadline,
     ) -> Result<bool, PlatformFailure> {
-        let output = self.run(
-            &strings(&["shell", "pm", "list", "packages", package]),
+        // `pm path <package>` is exact; `pm list packages <filter>` is substring.
+        let output = self.run_query(
+            &strings(&["shell", "pm", "path", package]),
             cancellation,
             deadline,
         )?;
-        parse_package_present(&output, package)
+        parse_package_path(&output)
     }
 
     fn pidof(
@@ -934,16 +935,25 @@ fn unknown_launch_state(line: &str) -> bool {
         .is_some_and(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
-fn parse_package_present(output: &str, package: &str) -> Result<bool, PlatformFailure> {
+fn parse_package_path(output: &str) -> Result<bool, PlatformFailure> {
     let value = strip_one_line_ending(output)?;
     if value.is_empty() {
         return Ok(false);
     }
-    if value == format!("package:{package}") {
-        Ok(true)
-    } else {
-        Err(failure(PlatformFailureKind::Rejected))
+    let mut present = false;
+    for line in value.split('\n') {
+        let Some(path) = line.strip_prefix("package:") else {
+            return Err(failure(PlatformFailureKind::Rejected));
+        };
+        if !path.starts_with('/')
+            || path.len() < 2
+            || !path.bytes().all(|byte| byte.is_ascii_graphic())
+        {
+            return Err(failure(PlatformFailureKind::Rejected));
+        }
+        present = true;
     }
+    Ok(present)
 }
 
 fn parse_pidof(output: &str) -> Result<Vec<u32>, PlatformFailure> {

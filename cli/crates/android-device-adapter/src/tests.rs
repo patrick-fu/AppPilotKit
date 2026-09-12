@@ -24,6 +24,7 @@ use super::*;
 
 const SERIAL: &str = "R58N123456A";
 const PACKAGE: &str = "dev.apppilotkit.smokehost";
+const PACKAGE_PATH: &str = "package:/data/app/base.apk\n";
 const COMPONENT: &str = "dev.apppilotkit.smokehost/.AppPilotKitBootstrapActivity";
 const SECRET_CANARY: &str = "APPPILOTKIT_PRIVATE_SECRET_CANARY_7d14";
 const OWNED_PID: u32 = 42_424;
@@ -223,18 +224,22 @@ impl CommandRunner for FakeAdb {
             [help] if *help == "help" => Ok(stdout("forward tcp:0 localabstract:\n")),
             [state] if *state == "get-state" => Ok(stdout("device\n")),
             ["devices", "-l"] => Ok(stdout(usb_devices_l(&self.serial))),
-            ["shell", "pm", "list", "packages", package] if *package == PACKAGE => {
+            ["shell", "pm", "path", package] if *package == PACKAGE => {
                 if self.package_query_fails.load(Ordering::SeqCst) {
                     return Err(failure(PlatformFailureKind::Unavailable));
                 }
                 if self.package_present.load(Ordering::SeqCst) {
-                    Ok(stdout(format!("package:{PACKAGE}\n")))
+                    Ok(stdout(PACKAGE_PATH))
                 } else {
-                    Ok(stdout(""))
+                    Ok(ProcessOutput {
+                        stdout: Vec::new(),
+                        stderr: Vec::new(),
+                        success: false,
+                    })
                 }
             }
             ["install", "-t", snapshot] => {
-                assert!(!args.iter().any(|arg| *arg == "-r"));
+                assert!(!args.contains(&"-r"));
                 let path = Path::new(snapshot);
                 assert_eq!(
                     path.file_name().and_then(|name| name.to_str()),
@@ -493,7 +498,7 @@ fn wireless_or_missing_usb_transport_is_unavailable_without_install() {
     for listing in [
         wireless_devices_l(SERIAL),
         wireless_devices_l("192.168.1.8:5555"),
-        format!("List of devices attached\n"),
+        "List of devices attached\n".to_string(),
         format!(
             "List of devices attached\n{SERIAL}         unauthorized usb:1-1.2 product:test model:Pixel device:pixel transport_id:1\n"
         ),
@@ -521,10 +526,7 @@ fn present_package_is_rejected_without_install() {
         ok(&["help"], "forward tcp:0 localabstract:\n"),
         ok(&["get-state"], "device\n"),
         ok(&["devices", "-l"], usb_devices_l(SERIAL)),
-        ok(
-            &["shell", "pm", "list", "packages", PACKAGE],
-            format!("package:{PACKAGE}\n"),
-        ),
+        ok(&["shell", "pm", "path", PACKAGE], PACKAGE_PATH),
     ]);
     let adapter = AndroidDeviceAdapter::with_runner("/fake/adb", runner.clone());
     let error = adapter
@@ -751,7 +753,7 @@ fn package_query_failure_during_uninstall_is_cleanup_failed() {
         empty_pidof(),
         empty_pidof(),
         fail(
-            &["shell", "pm", "list", "packages", PACKAGE],
+            &["shell", "pm", "path", PACKAGE],
             PlatformFailureKind::Unavailable,
         ),
     ]);
@@ -778,10 +780,7 @@ fn exited_owned_pid_is_ok_and_still_uninstalls_lease() {
         ok(&["forward", "--list"], ""),
         empty_pidof(),
         empty_pidof(),
-        ok(
-            &["shell", "pm", "list", "packages", PACKAGE],
-            format!("package:{PACKAGE}\n"),
-        ),
+        ok(&["shell", "pm", "path", PACKAGE], PACKAGE_PATH),
         ok(&["uninstall", PACKAGE], "Success\n"),
     ]);
     let cleanup: Box<dyn CleanupReceipt> = Box::new(AndroidDeviceCleanup {
@@ -835,14 +834,21 @@ fn parse_pidof_and_package_presence() {
         parse_pidof("0\n").expect_err("zero").kind(),
         PlatformFailureKind::Rejected
     );
-    assert!(!must(parse_package_present("", PACKAGE), "absent"));
+    assert!(!must(parse_package_path(""), "absent"));
+    assert!(must(parse_package_path(PACKAGE_PATH), "present"));
     assert!(must(
-        parse_package_present(&format!("package:{PACKAGE}\n"), PACKAGE),
-        "present"
+        parse_package_path("package:/data/app/base.apk\npackage:/data/app/split.apk\n"),
+        "splits"
     ));
     assert_eq!(
-        parse_package_present("package:other\n", PACKAGE)
-            .expect_err("other")
+        parse_package_path(&format!("package:{PACKAGE}\n"))
+            .expect_err("list-packages shape")
+            .kind(),
+        PlatformFailureKind::Rejected
+    );
+    assert_eq!(
+        parse_package_path(&format!("package:{PACKAGE}.debug\n"))
+            .expect_err("substring sibling")
             .kind(),
         PlatformFailureKind::Rejected
     );

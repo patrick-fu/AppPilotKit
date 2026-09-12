@@ -5,10 +5,12 @@ Host `PlatformTargetAdapter` SPI. It accepts only an exact USB/hardware serial
 and rejects `emulator-*` selectors, empty selectors, CoreDevice UUIDs, and iOS
 UDIDs.
 
-After a host APK snapshot whose digest equals the PrepareKey, `pm list packages`
-decides install: absent installs this Host APK without `-r` and marks
-`installed_by_lease`; present is `Rejected` because the on-device package cannot
-be hashed. The adapter does not overwrite a pre-existing same-package app.
+After a host APK snapshot whose digest equals the PrepareKey, `pm path <package>`
+decides install: empty/absent installs this Host APK without `-r` and marks
+`installed_by_lease`; one or more `package:/...` lines is `Rejected` because the
+on-device package cannot be hashed. `pm list packages <filter>` is substring
+matching and is not used. The adapter does not overwrite a pre-existing
+same-package app.
 
 Launch uses one public `dev.apppilotkit.transport.DESCRIPTOR` extra, never a
 secret, PBS, or token. After `am start`, `pidof` must return exactly one PID

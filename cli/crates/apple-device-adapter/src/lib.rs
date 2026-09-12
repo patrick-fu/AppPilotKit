@@ -299,16 +299,16 @@ impl AppleDevicePendingLaunch {
             )
             .is_ok()
         } else {
-            match matching_processes(
-                self.runner.as_ref(),
-                self.selection.device_selector(),
-                ProcessIdentity::Exact(&candidate.process_path),
-                &cancellation,
-                deadline,
-            ) {
-                Ok(processes) if processes.is_empty() => true,
-                _ => false,
-            }
+            matches!(
+                matching_processes(
+                    self.runner.as_ref(),
+                    self.selection.device_selector(),
+                    ProcessIdentity::Exact(&candidate.process_path),
+                    &cancellation,
+                    deadline,
+                ),
+                Ok(processes) if processes.is_empty()
+            )
         };
         if process_cleaned
             && cleanup_owned_installation(
@@ -1204,6 +1204,7 @@ fn cleanup_owned_installation(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn revert_install_attempt(
     runner: &dyn ToolRunner,
     udid: &str,
